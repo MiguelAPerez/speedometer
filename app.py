@@ -70,8 +70,8 @@ def _reset_stats():
 def _pipeline(source, calibration: dict, units: str):
     """Runs in a background thread — reads frames, detects, tracks, estimates speed."""
     try:
-        detector = Detector()
-        tracker = CentroidTracker()
+        detector = Detector(model_path="yolo11s.pt")
+        tracker = CentroidTracker(graveyard_max_frames=150)
         estimator = SpeedEstimator.from_track(
             calibration["points"],
             calibration["distances"],
@@ -105,7 +105,7 @@ def _pipeline(source, calibration: dict, units: str):
                     break
 
                 dets = detector.detect(frame)
-                tracks = tracker.update(dets)
+                tracks = tracker.update(dets, frame=frame)
                 records = estimator.update(tracks, frame_ts=t_frame_start)
 
                 with _lock:

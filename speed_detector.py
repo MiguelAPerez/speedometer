@@ -219,8 +219,12 @@ def run(args: argparse.Namespace) -> None:
     cal_distances = calib["distances"]
 
     # ---- Pipeline ----
-    detector  = Detector(conf_threshold=args.conf)
-    tracker   = CentroidTracker(max_distance=args.max_distance, max_missing=args.max_missing)
+    detector  = Detector(model_path=args.model, conf_threshold=args.conf)
+    tracker   = CentroidTracker(
+        max_distance=args.max_distance,
+        max_missing=args.max_missing,
+        graveyard_max_frames=args.graveyard_frames,
+    )
     estimator = SpeedEstimator.from_track(cal_points, cal_distances)
 
     # ---- Output files ----
@@ -257,7 +261,7 @@ def run(args: argparse.Namespace) -> None:
             else:
                 detections = []
 
-            tracks       = tracker.update(detections)
+            tracks       = tracker.update(detections, frame=frame)
             speed_records = estimator.update(tracks, frame_ts=frame_ts)
 
             # Log first speed reading per track to CSV
@@ -318,6 +322,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--source", default="0",
                    help="Video source: webcam index, file path, or RTSP/HTTP URL")
+    p.add_argument("--model", default="yolo11s.pt",
+                   help="YOLO model weights (auto-downloaded if not present)")
     p.add_argument("--calibrate", action="store_true",
                    help="Force recalibration even if a saved calibration exists")
     p.add_argument("--units", choices=["mph", "kph"], default="mph",
@@ -329,7 +335,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-distance", type=float, default=80.0,
                    help="Max pixel distance for centroid tracker matching")
     p.add_argument("--max-missing", type=int, default=25,
-                   help="Frames a track can disappear before being dropped")
+                   help="Frames a track can disappear before moving to graveyard")
+    p.add_argument("--graveyard-frames", type=int, default=150,
+                   help="Frames a graveyard track is held for re-identification (~5s at 30fps)")
     p.add_argument("--skip-frames", type=int, default=1,
                    help="Run YOLO inference every N frames (tracker runs every frame)")
     p.add_argument("--source-fps", type=float, default=None,

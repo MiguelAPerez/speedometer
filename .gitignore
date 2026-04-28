@@ -4,5 +4,7 @@ tmp/
 *.log
 *.pyc
 
+calibration.json
 calibrations.json
 yolov8n.pt
+yolo11s.pt
