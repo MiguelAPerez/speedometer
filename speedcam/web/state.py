@@ -18,6 +18,8 @@ _state: dict = {
     "tmp_video_path": None,   # path to uploaded video temp file
     "error": None,
     "pipeline_thread": None,  # background threading.Thread
+    "map_segment": None,      # {"points": [{"lat":…,"lng":…},…], "label": str}
+    "map_location": None,     # {"lat": float, "lng": float}
 }
 
 

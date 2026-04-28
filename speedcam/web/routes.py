@@ -207,6 +207,32 @@ def stats():
     })
 
 
+@bp.route("/api/map_segment")
+def get_map_segment():
+    with _lock:
+        return jsonify({"ok": True, "segment": _state.get("map_segment"), "location": _state.get("map_location")})
+
+
+@bp.route("/api/map_segment", methods=["POST"])
+def set_map_segment():
+    data = request.json or {}
+    points = data.get("points", [])
+    label  = str(data.get("label", ""))
+    for p in points:
+        if "lat" not in p or "lng" not in p:
+            return jsonify({"ok": False, "error": "each point needs lat and lng"}), 400
+        try:
+            p["lat"] = float(p["lat"]); p["lng"] = float(p["lng"])
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "lat/lng must be numbers"}), 400
+    loc = data.get("location")
+    with _lock:
+        _state["map_segment"]  = {"points": points, "label": label} if points else None
+        if loc:
+            _state["map_location"] = loc
+    return jsonify({"ok": True})
+
+
 @bp.route("/api/download_csv")
 def download_csv():
     with _lock:

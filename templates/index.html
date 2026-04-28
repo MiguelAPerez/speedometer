@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>speedcam</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.js" crossorigin=""></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -17,6 +19,10 @@
     --muted: #8e8e93;
     --line-a: #00ffb4;
     --line-b: #ff8c00;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --transition: 150ms ease;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.4);
   }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; display: flex; height: 100vh; overflow: hidden; }
 
@@ -28,14 +34,20 @@
   .radio-group label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .btn { width: 100%; padding: 9px 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
   .btn:hover { opacity: .85; }
+  .btn:active:not(:disabled) { opacity: .7; transform: scale(.98); }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-danger  { background: var(--red);    color: #fff; }
   .btn-neutral { background: var(--border); color: var(--text); }
+  .btn-ghost   { background: transparent; color: var(--muted); border: 1px solid var(--border); }
   .kpi-block { display: flex; flex-direction: column; gap: 10px; }
-  .kpi { background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+  .kpi { background: var(--bg); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); position: relative; overflow: hidden; }
+  .kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); border-radius: 3px 0 0 3px; }
   .kpi-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
   .kpi-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kpi-value.speed-low  { color: var(--green); }
+  .kpi-value.speed-mid  { color: #ffd60a; }
+  .kpi-value.speed-high { color: var(--red); }
   #file-drop { border: 2px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); cursor: pointer; font-size: 12px; transition: border-color .2s; }
   #file-drop:hover, #file-drop.dragover { border-color: var(--accent); color: var(--accent); }
   #file-drop input { display: none; }
@@ -44,13 +56,15 @@
   .dist-row input[type=number] { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
   .dist-row span { color: var(--muted); font-size: 12px; white-space: nowrap; }
   #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; }
-  #status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.2s infinite; }
+  #status-dot.live  { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.2s infinite; }
+  #status-dot.error { background: var(--red); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
   /* Main */
   #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
   #tabs { display: flex; border-bottom: 1px solid var(--border); }
   .tab { padding: 12px 20px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 500; transition: color .15s; }
+  .tab:hover:not(.active) { color: var(--text); }
   .tab.active { color: var(--text); border-bottom-color: var(--accent); }
   .tab-panel { display: none; flex: 1; overflow: auto; padding: 20px; }
   .tab-panel.active { display: flex; flex-direction: column; gap: 16px; }
@@ -70,13 +84,28 @@
 
   /* Detections table */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { position: sticky; top: 0; background: var(--surface); z-index: 1; }
   th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
-  td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.04); font-variant-numeric: tabular-nums; }
+  tbody tr:hover td { background: rgba(255,255,255,.03); }
   tr:last-child td { border-bottom: none; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--border); }
   .tag-info { background: #0a84ff22; color: var(--accent); }
+  .speed-badge { font-variant-numeric: tabular-nums; }
+  .speed-badge.speed-low  { color: var(--green); font-weight: 600; }
+  .speed-badge.speed-mid  { color: #ffd60a; font-weight: 600; }
+  .speed-badge.speed-high { color: var(--red); font-weight: 600; }
   #toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; }
   #toast.show { opacity: 1; }
+
+  /* Map tab */
+  #tab-map { padding: 0 !important; }
+  #map-layout { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+  #map-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #map-search-input { flex: 1; min-width: 180px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 13px; }
+  #map-search-input:focus { outline: none; border-color: var(--accent); }
+  #map-container { flex: 1; min-height: 0; }
+  #map-segment-info { padding: 8px 16px; background: var(--surface); border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -136,6 +165,7 @@
     <div class="tab active" data-tab="calibrate">1 — Calibrate</div>
     <div class="tab" data-tab="live">2 — Live</div>
     <div class="tab" data-tab="detections">3 — Detections</div>
+    <div class="tab" data-tab="map">4 — Map</div>
   </div>
 
   <!-- CALIBRATE TAB -->
@@ -173,6 +203,23 @@
   <div class="tab-panel" id="tab-detections">
     <div id="table-wrap">
       <p style="color:var(--muted)">No detections yet.</p>
+    </div>
+  </div>
+
+  <!-- MAP TAB -->
+  <div class="tab-panel" id="tab-map">
+    <div id="map-layout">
+      <div id="map-toolbar">
+        <input type="text" id="map-search-input" placeholder="Search address or place…" autocomplete="off">
+        <button class="btn btn-neutral" id="btn-map-search" style="width:auto;padding:7px 14px">🔍 Search</button>
+        <button class="btn btn-ghost"   id="btn-map-tile-toggle" style="width:auto;padding:7px 14px">🛰 Satellite</button>
+        <button class="btn btn-ghost"   id="btn-map-clear-seg"   style="width:auto;padding:7px 14px">✕ Clear</button>
+        <button class="btn btn-primary" id="btn-map-save-seg"    style="width:auto;padding:7px 14px" disabled>📍 Save segment</button>
+      </div>
+      <div id="map-container"></div>
+      <div id="map-segment-info">
+        <span id="map-seg-label">Click two points on the map to mark the filmed road segment.</span>
+      </div>
     </div>
   </div>
 </main>
@@ -469,6 +516,14 @@ document.getElementById('btn-csv').addEventListener('click', () => {
 });
 
 // ── Stats polling ─────────────────────────────────────────────────────────
+function speedClass(spd, units) {
+  if (spd === null || spd === undefined) return '';
+  const [lo, hi] = units === 'mph' ? [30, 60] : [50, 100];
+  if (spd < lo) return 'speed-low';
+  if (spd < hi) return 'speed-mid';
+  return 'speed-high';
+}
+
 let lastCount = 0;
 
 async function pollStats() {
@@ -483,6 +538,10 @@ async function pollStats() {
       dot.className = 'live'; stxt.textContent = 'Live';
       document.getElementById('btn-stop').disabled = false;
       document.getElementById('btn-start').disabled = true;
+    } else if (d.error) {
+      dot.className = 'error'; stxt.textContent = 'Error';
+      document.getElementById('btn-stop').disabled = true;
+      document.getElementById('btn-start').disabled = false;
     } else {
       dot.className = ''; stxt.textContent = 'Idle';
       document.getElementById('btn-stop').disabled = true;
@@ -490,9 +549,13 @@ async function pollStats() {
     }
     errEl.textContent = d.error || '';
 
+    const lastEl = document.getElementById('kpi-last');
+    const avgEl  = document.getElementById('kpi-avg');
     if (d.last_speed !== null) {
-      document.getElementById('kpi-last').textContent = d.last_speed + ' ' + d.units;
-      document.getElementById('kpi-avg').textContent  = d.avg_speed  + ' ' + d.units;
+      lastEl.textContent = d.last_speed + ' ' + d.units;
+      avgEl.textContent  = d.avg_speed  + ' ' + d.units;
+      lastEl.className = 'kpi-value ' + speedClass(d.last_speed, d.units);
+      avgEl.className  = 'kpi-value ' + speedClass(d.avg_speed,  d.units);
     }
     document.getElementById('kpi-count').textContent = d.count;
     document.getElementById('btn-csv').disabled = d.count === 0;
@@ -519,7 +582,7 @@ function renderTable(rows, units) {
       <td>${row.time}</td>
       <td><span class="pill">#${row.id}</span></td>
       <td><span class="pill tag-info">${row.type}</span></td>
-      <td>${row[speedCol] ?? '—'}</td>
+      <td><span class="speed-badge ${speedClass(row[speedCol] ?? null, units)}">${row[speedCol] ?? '—'}</span></td>
       <td>${row.direction}</td>
     </tr>`;
   });
@@ -529,6 +592,196 @@ function renderTable(rows, units) {
 
 setInterval(pollStats, 800);
 pollStats();
+
+// ── Map Tab ───────────────────────────────────────────────────────────────
+const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const SAT_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+let _map, _tileLayer, _isSatellite = false;
+let _segPts = [], _segLine = null, _segMarkers = [], _detMarkers = [];
+let _mapReady = false;
+let _nomLastCall = 0;
+
+async function _nominatimSearch(q) {
+  const elapsed = Date.now() - _nomLastCall;
+  if (elapsed < 1100) await new Promise(r => setTimeout(r, 1100 - elapsed));
+  _nomLastCall = Date.now();
+  const resp = await fetch(
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,
+    { headers: { 'Accept-Language': 'en', 'User-Agent': 'speedcam-local/1.0' } }
+  );
+  if (!resp.ok) throw new Error(`Nominatim ${resp.status}`);
+  return resp.json();
+}
+
+function _initMap() {
+  if (_mapReady) return;
+  _mapReady = true;
+  _map = L.map('map-container', { center: [39.8283, -98.5795], zoom: 4 });
+  _tileLayer = L.tileLayer(OSM_URL, { attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors', maxZoom: 19 }).addTo(_map);
+  _map.on('click', _onMapClick);
+  _loadMapState();
+}
+
+document.querySelector('[data-tab="map"]').addEventListener('click', () =>
+  requestAnimationFrame(() => _initMap())
+);
+
+function _onMapClick(e) {
+  if (_segPts.length >= 2) { _clearSegGraphics(); _segPts = []; }
+  const pt = { lat: e.latlng.lat, lng: e.latlng.lng };
+  _segPts.push(pt);
+  const isEnd = _segPts.length === 2;
+  const color = isEnd ? '#ff8c00' : '#00ffb4';
+  const m = L.circleMarker([pt.lat, pt.lng], { radius: 8, color, fillColor: color, fillOpacity: 1, weight: 2 })
+    .bindPopup(isEnd ? 'End' : 'Start').addTo(_map);
+  _segMarkers.push(m);
+  if (isEnd) {
+    _segLine = L.polyline(_segPts.map(p => [p.lat, p.lng]),
+      { color: '#0a84ff', weight: 4, opacity: .8, dashArray: '8 6' }).addTo(_map);
+    document.getElementById('btn-map-save-seg').disabled = false;
+  }
+  _updateSegInfo();
+}
+
+function _clearSegGraphics() {
+  _segMarkers.forEach(m => _map.removeLayer(m)); _segMarkers = [];
+  if (_segLine) { _map.removeLayer(_segLine); _segLine = null; }
+}
+
+function _clearDetMarkers() {
+  if (!_map) return;
+  _detMarkers.forEach(m => _map.removeLayer(m)); _detMarkers = [];
+}
+
+function _updateSegInfo(msg) {
+  const el = document.getElementById('map-seg-label');
+  if (msg) { el.textContent = msg; return; }
+  if (_segPts.length === 2) {
+    const d = _haversineM(_segPts[0], _segPts[1]);
+    el.textContent = `Segment: ${d.toFixed(0)} m  |  ${_segPts[0].lat.toFixed(5)},${_segPts[0].lng.toFixed(5)} → ${_segPts[1].lat.toFixed(5)},${_segPts[1].lng.toFixed(5)}`;
+  } else if (_segPts.length === 1) {
+    el.textContent = 'Click a second point to complete the segment.';
+  } else {
+    el.textContent = 'Click two points on the map to mark the filmed road segment.';
+  }
+}
+
+function _haversineM(a, b) {
+  const R = 6371000, dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+document.getElementById('btn-map-search').addEventListener('click', _doSearch);
+document.getElementById('map-search-input').addEventListener('keydown', e => { if (e.key === 'Enter') _doSearch(); });
+
+async function _doSearch() {
+  const q = document.getElementById('map-search-input').value.trim();
+  if (!q) return;
+  const btn = document.getElementById('btn-map-search');
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    _initMap();
+    const res = await _nominatimSearch(q);
+    if (!res.length) { toast('Location not found', true); return; }
+    _map.setView([parseFloat(res[0].lat), parseFloat(res[0].lon)], 16);
+    toast('📍 ' + res[0].display_name.split(',')[0]);
+  } catch (err) {
+    toast('Search error: ' + err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 Search';
+  }
+}
+
+document.getElementById('btn-map-tile-toggle').addEventListener('click', () => {
+  if (!_map) return;
+  _isSatellite = !_isSatellite;
+  _map.removeLayer(_tileLayer);
+  if (_isSatellite) {
+    _tileLayer = L.tileLayer(SAT_URL, { attribution: 'Tiles © Esri', maxZoom: 19 }).addTo(_map);
+    document.getElementById('btn-map-tile-toggle').textContent = '🗺 Street';
+  } else {
+    _tileLayer = L.tileLayer(OSM_URL, { attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors', maxZoom: 19 }).addTo(_map);
+    document.getElementById('btn-map-tile-toggle').textContent = '🛰 Satellite';
+  }
+});
+
+document.getElementById('btn-map-clear-seg').addEventListener('click', () => {
+  if (!_map) return;
+  _clearSegGraphics(); _clearDetMarkers(); _segPts = [];
+  document.getElementById('btn-map-save-seg').disabled = true;
+  _updateSegInfo();
+  fetch('/api/map_segment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ points: [], label: '' }) });
+});
+
+document.getElementById('btn-map-save-seg').addEventListener('click', async () => {
+  if (_segPts.length < 2) return;
+  const label = document.getElementById('map-search-input').value.trim();
+  const r = await fetch('/api/map_segment', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ points: _segPts, label })
+  });
+  const d = await r.json();
+  if (d.ok) { toast('Segment saved'); _overlayDetections(); }
+  else toast('Save failed: ' + d.error, true);
+});
+
+async function _loadMapState() {
+  try {
+    const r = await fetch('/api/map_segment'); const d = await r.json();
+    if (d.location) _map.setView([d.location.lat, d.location.lng], 16);
+    if (d.segment?.points?.length >= 2) {
+      _segPts = d.segment.points;
+      _clearSegGraphics();
+      _segPts.forEach((pt, i) => {
+        const color = i === 0 ? '#00ffb4' : '#ff8c00';
+        const m = L.circleMarker([pt.lat, pt.lng], { radius: 8, color, fillColor: color, fillOpacity: 1, weight: 2 })
+          .bindPopup(i === 0 ? 'Start' : 'End').addTo(_map);
+        _segMarkers.push(m);
+      });
+      _segLine = L.polyline(_segPts.map(p => [p.lat, p.lng]),
+        { color: '#0a84ff', weight: 4, opacity: .8, dashArray: '8 6' }).addTo(_map);
+      document.getElementById('btn-map-save-seg').disabled = false;
+      _updateSegInfo(); _overlayDetections();
+    }
+  } catch (e) { /* non-fatal */ }
+}
+
+function _spdColor(spd, units) {
+  const [lo, hi] = units === 'mph' ? [30, 60] : [50, 100];
+  const t = Math.min(1, Math.max(0, (spd - lo) / (hi - lo)));
+  return t < 0.5 ? _lerpHex('#30d158', '#ffd60a', t * 2) : _lerpHex('#ffd60a', '#ff453a', (t - .5) * 2);
+}
+
+function _lerpHex(a, b, t) {
+  const ah = parseInt(a.slice(1), 16), bh = parseInt(b.slice(1), 16);
+  const lerp = (s) => Math.round(((ah >> s) & 0xff) + (((bh >> s) & 0xff) - ((ah >> s) & 0xff)) * t).toString(16).padStart(2, '0');
+  return '#' + lerp(16) + lerp(8) + lerp(0);
+}
+
+async function _overlayDetections() {
+  if (!_map || _segPts.length < 2) return;
+  _clearDetMarkers();
+  const r = await fetch('/api/stats'); const d = await r.json();
+  if (!d.detections?.length) return;
+  const [s, e] = [_segPts[0], _segPts[1]];
+  d.detections.forEach((det, i) => {
+    const t = d.detections.length === 1 ? 0.5 : i / (d.detections.length - 1);
+    const lat = s.lat + (e.lat - s.lat) * t, lng = s.lng + (e.lng - s.lng) * t;
+    const spd = det[`speed_${d.units}`] ?? 0;
+    const m = L.circleMarker([lat, lng], {
+      radius: 7, color: '#fff', weight: 1.5, fillColor: _spdColor(spd, d.units), fillOpacity: .9
+    }).bindPopup(
+      `<strong>#${det.id}</strong> ${det.type}<br>${spd} ${d.units}<br><small>${det.time} · ${det.direction}</small>`
+    ).addTo(_map);
+    _detMarkers.push(m);
+  });
+}
+
+document.querySelector('[data-tab="map"]').addEventListener('click', () => {
+  if (_mapReady && _segPts.length === 2) _overlayDetections();
+});
 
 // ── Toast ─────────────────────────────────────────────────────────────────
 function toast(msg, isError=false) {
