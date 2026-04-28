@@ -219,7 +219,7 @@ def run(args: argparse.Namespace) -> None:
     cal_distances = calib["distances"]
 
     # ---- Pipeline ----
-    detector  = Detector(model_path=args.model, conf_threshold=args.conf)
+    detector  = Detector(model_path=args.model, conf_threshold=args.conf, min_area=args.min_area)
     tracker   = CentroidTracker(
         max_distance=args.max_distance,
         max_missing=args.max_missing,
@@ -330,8 +330,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Speed units for display and CSV output")
     p.add_argument("--record", action="store_true",
                    help="Write annotated video to output.mp4")
-    p.add_argument("--conf", type=float, default=0.35,
+    p.add_argument("--conf", type=float, default=0.40,
                    help="YOLO detection confidence threshold")
+    p.add_argument("--min-area", type=int, default=0,
+                   help="Minimum bounding-box area in pixels (0 = disabled)")
     p.add_argument("--max-distance", type=float, default=80.0,
                    help="Max pixel distance for centroid tracker matching")
     p.add_argument("--max-missing", type=int, default=25,
