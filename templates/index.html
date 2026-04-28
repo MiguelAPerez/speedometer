@@ -4,89 +4,126 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>speedcam</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.css" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.js" crossorigin=""></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #111;
-    --surface: #1c1c1e;
-    --border: #2c2c2e;
-    --accent: #0a84ff;
-    --green: #30d158;
-    --red: #ff453a;
-    --text: #f2f2f7;
-    --muted: #8e8e93;
-    --line-a: #00ffb4;
-    --line-b: #ff8c00;
+    --bg: #111; --surface: #1c1c1e; --border: #2c2c2e;
+    --accent: #0a84ff; --green: #30d158; --red: #ff453a;
+    --text: #f2f2f7; --muted: #8e8e93;
+    --line-a: #00ffb4; --line-b: #ff8c00; --r: 6px;
   }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; display: flex; height: 100vh; overflow: hidden; }
 
-  /* Sidebar */
-  #sidebar { width: 240px; min-width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 20px 16px; gap: 16px; overflow-y: auto; }
-  #sidebar h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
-  .section-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 6px; }
-  .radio-group { display: flex; flex-direction: column; gap: 6px; }
-  .radio-group label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-  .btn { width: 100%; padding: 9px 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+  /* ── Sidebar ── */
+  #sidebar { width: 210px; min-width: 210px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 14px 12px; gap: 14px; overflow-y: auto; flex-shrink: 0; }
+  #sidebar h1 { font-size: 16px; font-weight: 700; letter-spacing: -0.5px; }
+  .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 5px; }
+  .radio-group { display: flex; flex-direction: column; gap: 5px; }
+  .radio-group label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+  .btn { width: 100%; padding: 8px 10px; border: none; border-radius: var(--r); font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
   .btn:hover { opacity: .85; }
-  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn:active:not(:disabled) { opacity: .7; transform: scale(.98); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
   .btn-primary { background: var(--accent); color: #fff; }
   .btn-danger  { background: var(--red);    color: #fff; }
   .btn-neutral { background: var(--border); color: var(--text); }
-  .kpi-block { display: flex; flex-direction: column; gap: 10px; }
-  .kpi { background: var(--bg); border-radius: 8px; padding: 10px 12px; }
-  .kpi-label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
-  .kpi-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  #file-drop { border: 2px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); cursor: pointer; font-size: 12px; transition: border-color .2s; }
+  .btn-ghost   { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-sm      { padding: 5px 9px; font-size: 12px; }
+  .btn-row     { display: flex; gap: 6px; }
+  .btn-row .btn { flex: 1; }
+  #file-drop { border: 2px dashed var(--border); border-radius: var(--r); padding: 12px; text-align: center; color: var(--muted); cursor: pointer; font-size: 12px; transition: border-color .2s; }
   #file-drop:hover, #file-drop.dragover { border-color: var(--accent); color: var(--accent); }
   #file-drop input { display: none; }
-  select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
-  .dist-row { display: flex; align-items: center; gap: 8px; }
-  .dist-row input[type=number] { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 13px; }
-  .dist-row span { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; }
-  #status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.2s infinite; }
+  select { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); padding: 6px 8px; font-size: 13px; }
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; margin-right: 6px; flex-shrink: 0; }
+  #status-dot.live  { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.2s infinite; }
+  #status-dot.error { background: var(--red); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .kpi-block { display: flex; flex-direction: column; gap: 8px; }
+  .kpi { background: var(--bg); border-radius: var(--r); padding: 9px 10px; border: 1px solid var(--border); position: relative; overflow: hidden; }
+  .kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); border-radius: 3px 0 0 3px; }
+  .kpi-label { font-size: 10px; color: var(--muted); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kpi-value.speed-low  { color: var(--green); }
+  .kpi-value.speed-mid  { color: #ffd60a; }
+  .kpi-value.speed-high { color: var(--red); }
 
-  /* Main */
-  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  #tabs { display: flex; border-bottom: 1px solid var(--border); }
-  .tab { padding: 12px 20px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 500; transition: color .15s; }
-  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
-  .tab-panel { display: none; flex: 1; overflow: auto; padding: 20px; }
-  .tab-panel.active { display: flex; flex-direction: column; gap: 16px; }
+  /* ── Main column ── */
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 
-  /* Calibration canvas */
-  #cal-wrap { position: relative; display: inline-block; max-width: 100%; cursor: crosshair; }
-  #cal-img { display: block; max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
-  #cal-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 8px; }
-  .cal-hint { color: var(--muted); font-size: 13px; }
-  .line-badge { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
-  .line-a { background: var(--line-a); }
-  .line-b { background: var(--line-b); }
+  /* ── Workspace (split pane) ── */
+  #workspace { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+  #workspace.split-h { flex-direction: row; }
+  #workspace.split-v { flex-direction: column; }
 
-  /* Live feed */
-  #feed-wrap { position: relative; max-width: 100%; }
-  #live-img { display: block; max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+  /* ── Video pane ── */
+  #video-pane { display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; flex: 1 1 55%; }
+  #video-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 10px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #cal-status-text { font-size: 11px; color: var(--green); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #video-wrap { flex: 1; position: relative; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  #cal-img { display: block; max-width: 100%; max-height: 100%; }
+  #cal-canvas { position: absolute; cursor: crosshair; }
+  #cal-canvas.no-interact { pointer-events: none; cursor: default; }
+  #cal-hint { flex-shrink: 0; padding: 7px 10px; background: var(--surface); border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 5px; max-height: 130px; overflow-y: auto; }
+  #cal-hint.hidden { display: none; }
+  .dist-row { display: flex; align-items: center; gap: 5px; }
+  .dist-row input[type=number] { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 3px 7px; font-size: 12px; }
+  .dist-row span { color: var(--muted); font-size: 11px; white-space: nowrap; }
 
-  /* Detections table */
+  /* ── Drag handle ── */
+  #drag-handle { flex-shrink: 0; background: var(--border); z-index: 10; transition: background .15s; }
+  #workspace.split-h #drag-handle { width: 5px; cursor: col-resize; }
+  #workspace.split-v #drag-handle { height: 5px; cursor: row-resize; }
+  #drag-handle:hover, #drag-handle.active { background: var(--accent); }
+
+  /* ── Map pane ── */
+  #map-pane { display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; flex: 1 1 45%; }
+  #map-toolbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 7px 10px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #map-search-input { flex: 1; min-width: 120px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); padding: 5px 9px; font-size: 13px; }
+  #map-search-input:focus { outline: none; border-color: var(--accent); }
+  #map-container { flex: 1; min-height: 0; }
+  #map-seg-info { padding: 5px 10px; background: var(--surface); border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── Detections drawer ── */
+  #det-drawer { flex-shrink: 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; transition: height .2s ease; }
+  #det-drawer.collapsed { height: 34px; }
+  #det-drawer.expanded  { height: 230px; }
+  #det-header { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 34px; cursor: pointer; font-size: 13px; font-weight: 600; flex-shrink: 0; user-select: none; background: var(--surface); }
+  #det-header:hover { background: #252527; }
+  #det-badge { background: var(--border); color: var(--muted); font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 10px; }
+  #det-badge.has-data { background: var(--accent); color: #fff; }
+  #det-chevron { margin-left: auto; color: var(--muted); font-size: 11px; transition: transform .2s; }
+  #det-drawer.expanded #det-chevron { transform: rotate(180deg); }
+  #det-body { flex: 1; overflow-y: auto; min-height: 0; }
+
+  /* ── Table ── */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
-  td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  thead { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  th { text-align: left; padding: 7px 12px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); }
+  td { padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,.04); font-variant-numeric: tabular-nums; }
+  tbody tr:hover td { background: rgba(255,255,255,.03); }
   tr:last-child td { border-bottom: none; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; background: var(--border); }
   .tag-info { background: #0a84ff22; color: var(--accent); }
-  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .speed-badge.speed-low  { color: var(--green); font-weight: 600; }
+  .speed-badge.speed-mid  { color: #ffd60a;      font-weight: 600; }
+  .speed-badge.speed-high { color: var(--red);   font-weight: 600; }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 9999; }
   #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 
-<!-- ===== SIDEBAR ===== -->
+<!-- SIDEBAR -->
 <aside id="sidebar">
   <h1>🚗 speedcam</h1>
 
   <div>
-    <div class="section-label">Source</div>
+    <div class="lbl">Source</div>
     <div class="radio-group">
       <label><input type="radio" name="src" value="webcam" checked> Webcam</label>
       <label><input type="radio" name="src" value="file"> Video file</label>
@@ -96,111 +133,115 @@
   <div id="file-section" style="display:none">
     <div id="file-drop" onclick="document.getElementById('file-input').click()">
       <input type="file" id="file-input" accept=".mp4,.mov,.avi,.mkv">
-      Drop video here or click
+      Drop video or click
     </div>
     <div id="file-name" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
   </div>
 
   <div>
-    <div class="section-label">Units</div>
+    <div class="lbl">Units</div>
     <select id="units-select">
       <option value="mph">mph</option>
       <option value="kph">kph</option>
     </select>
   </div>
 
-  <div style="display:flex;flex-direction:column;gap:8px">
-    <button class="btn btn-primary" id="btn-start" disabled>▶ Start</button>
-    <button class="btn btn-danger"  id="btn-stop"  disabled>■ Stop</button>
-    <button class="btn btn-neutral" id="btn-reset">↺ Reset stats</button>
-    <button class="btn btn-neutral" id="btn-csv"   disabled>↓ Download CSV</button>
+  <div>
+    <div class="lbl">Controls</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button class="btn btn-primary" id="btn-start" disabled>▶ Start</button>
+      <button class="btn btn-danger"  id="btn-stop"  disabled>■ Stop</button>
+      <div class="btn-row">
+        <button class="btn btn-neutral" id="btn-reset">↺ Reset</button>
+        <button class="btn btn-neutral" id="btn-csv" disabled>↓ CSV</button>
+      </div>
+    </div>
   </div>
 
   <div>
-    <div class="section-label">Status</div>
-    <div><span id="status-dot"></span><span id="status-text">Idle</span></div>
-    <div id="error-msg" style="color:var(--red);font-size:12px;margin-top:4px"></div>
+    <div class="lbl">Status</div>
+    <div style="display:flex;align-items:center"><span id="status-dot"></span><span id="status-text">Idle</span></div>
+    <div id="error-msg" style="color:var(--red);font-size:11px;margin-top:4px"></div>
   </div>
 
   <div class="kpi-block">
-    <div class="section-label">Stats</div>
+    <div class="lbl">Stats</div>
     <div class="kpi"><div class="kpi-label">Last speed</div><div class="kpi-value" id="kpi-last">—</div></div>
     <div class="kpi"><div class="kpi-label">Avg speed</div><div class="kpi-value" id="kpi-avg">—</div></div>
     <div class="kpi"><div class="kpi-label">Vehicles</div><div class="kpi-value" id="kpi-count">0</div></div>
   </div>
 </aside>
 
-<!-- ===== MAIN ===== -->
-<main id="main">
-  <div id="tabs">
-    <div class="tab active" data-tab="calibrate">1 — Calibrate</div>
-    <div class="tab" data-tab="live">2 — Live</div>
-    <div class="tab" data-tab="detections">3 — Detections</div>
+<!-- MAIN -->
+<div id="main">
+
+  <div id="workspace" class="split-h">
+
+    <!-- VIDEO PANE -->
+    <div id="video-pane">
+      <div id="video-toolbar">
+        <button class="btn btn-neutral btn-sm" id="btn-grab-webcam" style="width:auto">📷 Grab frame</button>
+        <button class="btn btn-ghost  btn-sm" id="btn-undo-pt"     style="width:auto">↩ Undo</button>
+        <button class="btn btn-ghost  btn-sm" id="btn-clear-cal"   style="width:auto">✕ Clear</button>
+        <button class="btn btn-primary btn-sm" id="btn-save-cal"   style="width:auto" disabled>💾 Save &amp; Start</button>
+        <span id="cal-status-text"></span>
+      </div>
+      <div id="video-wrap">
+        <img id="cal-img" src="/preview_frame" alt="preview">
+        <canvas id="cal-canvas"></canvas>
+      </div>
+      <div id="cal-hint">
+        <span id="cal-instruction">Click on the road to place point <strong>A</strong>, then keep clicking to extend the track.</span>
+        <div id="seg-inputs"></div>
+      </div>
+    </div>
+
+    <!-- DRAG HANDLE -->
+    <div id="drag-handle"></div>
+
+    <!-- MAP PANE -->
+    <div id="map-pane">
+      <div id="map-toolbar">
+        <input type="text" id="map-search-input" placeholder="Search address or place…" autocomplete="off">
+        <button class="btn btn-neutral btn-sm" id="btn-map-search"     style="width:auto">🔍 Search</button>
+        <button class="btn btn-ghost  btn-sm" id="btn-map-tile-toggle" style="width:auto">🛰 Satellite</button>
+        <button class="btn btn-ghost  btn-sm" id="btn-map-clear-seg"   style="width:auto">✕ Seg</button>
+        <button class="btn btn-primary btn-sm" id="btn-map-save-seg"   style="width:auto" disabled>📍 Save</button>
+        <button class="btn btn-ghost  btn-sm" id="btn-split-dir"       style="width:auto" title="Toggle split direction">⇄</button>
+      </div>
+      <div id="map-container"></div>
+      <div id="map-seg-info"><span id="map-seg-label">Click two points on the map to mark the filmed road segment.</span></div>
+    </div>
+
+  </div><!-- #workspace -->
+
+  <!-- DETECTIONS DRAWER -->
+  <div id="det-drawer" class="collapsed">
+    <div id="det-header">
+      <span>Detections</span>
+      <span id="det-badge">0</span>
+      <span id="det-chevron">▲</span>
+    </div>
+    <div id="det-body">
+      <div id="table-wrap" style="padding:12px"><p style="color:var(--muted)">No detections yet.</p></div>
+    </div>
   </div>
 
-  <!-- CALIBRATE TAB -->
-  <div class="tab-panel active" id="tab-calibrate">
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-neutral" id="btn-grab-webcam" style="width:auto;padding:8px 14px">📷 Grab webcam frame</button>
-      <span class="cal-hint">or upload a video file in the sidebar</span>
-    </div>
-
-    <div class="cal-hint" id="cal-instruction">Click on the road to place point <strong>A</strong>, then keep clicking to extend the track. Enter each segment's distance below.</div>
-
-    <div id="cal-wrap">
-      <img id="cal-img" src="/preview_frame" alt="preview">
-      <canvas id="cal-canvas"></canvas>
-    </div>
-
-    <div id="seg-inputs" style="display:flex;flex-direction:column;gap:8px"></div>
-
-    <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
-      <button class="btn btn-primary" id="btn-save-cal" style="width:auto;padding:8px 16px" disabled>💾 Save track</button>
-      <button class="btn btn-neutral" id="btn-undo-pt" style="width:auto;padding:8px 12px">↩ Undo last point</button>
-      <button class="btn btn-neutral" id="btn-clear-cal" style="width:auto;padding:8px 12px">✕ Clear all</button>
-    </div>
-    <div id="cal-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
-  </div>
-
-  <!-- LIVE TAB -->
-  <div class="tab-panel" id="tab-live">
-    <div id="feed-wrap">
-      <img id="live-img" src="/video_feed" alt="live feed">
-    </div>
-  </div>
-
-  <!-- DETECTIONS TAB -->
-  <div class="tab-panel" id="tab-detections">
-    <div id="table-wrap">
-      <p style="color:var(--muted)">No detections yet.</p>
-    </div>
-  </div>
-</main>
+</div><!-- #main -->
 
 <div id="toast"></div>
 
 <script>
-// ── Tabs ──────────────────────────────────────────────────────────────────
-document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
-  });
-});
-
 // ── Source radio ──────────────────────────────────────────────────────────
 document.querySelectorAll('input[name=src]').forEach(r => {
   r.addEventListener('change', () => {
-    document.getElementById('file-section').style.display =
-      r.value === 'file' ? 'block' : 'none';
+    document.getElementById('file-section').style.display = r.value === 'file' ? 'block' : 'none';
   });
 });
 
 // ── File upload ───────────────────────────────────────────────────────────
+const fileDrop = document.getElementById('file-drop');
 const fileInput = document.getElementById('file-input');
-const fileDrop  = document.getElementById('file-drop');
 const fileName  = document.getElementById('file-name');
 
 fileDrop.addEventListener('dragover', e => { e.preventDefault(); fileDrop.classList.add('dragover'); });
@@ -227,69 +268,70 @@ async function uploadFile(file) {
   }
 }
 
-// ── Calibration track drawer ──────────────────────────────────────────────
+// ── Calibration canvas ────────────────────────────────────────────────────
 const calImg    = document.getElementById('cal-img');
 const calCanvas = document.getElementById('cal-canvas');
+const videoWrap = document.getElementById('video-wrap');
 const ctx       = calCanvas.getContext('2d');
 
 let trackPts  = [];
 let frameSize = { w: 0, h: 0 };
-
+let _isLive   = false;
 const NODE_COLORS = ['#00ffb4','#ff8c00','#c850ff','#ffe066','#00cfff','#ff6b6b'];
 
-calImg.addEventListener('load', () => {
-  calCanvas.width  = calImg.naturalWidth;
-  calCanvas.height = calImg.naturalHeight;
+function resizeCanvas() {
+  if (!calImg.naturalWidth || !calImg.naturalHeight) return;
+  const wW = videoWrap.clientWidth, wH = videoWrap.clientHeight;
+  const iW = calImg.naturalWidth,   iH = calImg.naturalHeight;
+  const scale = Math.min(wW / iW, wH / iH);
+  const rW = iW * scale, rH = iH * scale;
+  calCanvas.style.left   = ((wW - rW) / 2) + 'px';
+  calCanvas.style.top    = ((wH - rH) / 2) + 'px';
+  calCanvas.style.width  = rW + 'px';
+  calCanvas.style.height = rH + 'px';
+  calCanvas.width  = iW;
+  calCanvas.height = iH;
   redrawCal();
-});
+}
+
+calImg.addEventListener('load', () => { if (!_isLive) resizeCanvas(); });
+window.addEventListener('resize', () => { resizeCanvas(); if (_map) _map.invalidateSize(); });
 
 document.getElementById('btn-grab-webcam').addEventListener('click', async () => {
   const r = await fetch('/api/grab_webcam_frame', { method: 'POST' });
   const d = await r.json();
-  if (d.ok) {
-    frameSize = { w: d.w, h: d.h };
-    refreshPreview();
-    tryLoadCal();
-  } else {
-    toast('Webcam error: ' + d.error, true);
-  }
+  if (d.ok) { frameSize = { w: d.w, h: d.h }; refreshPreview(); tryLoadCal(); }
+  else toast('Webcam error: ' + d.error, true);
 });
 
 calCanvas.addEventListener('click', e => {
+  if (calCanvas.classList.contains('no-interact')) return;
   const rect = calCanvas.getBoundingClientRect();
-  const sx = calCanvas.width  / rect.width;
-  const sy = calCanvas.height / rect.height;
+  const sx = calCanvas.width / rect.width, sy = calCanvas.height / rect.height;
   trackPts.push({ x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy });
-  redrawCal();
-  rebuildSegInputs();
-  updateCalState();
+  redrawCal(); rebuildSegInputs(); updateCalState();
 });
 
 function redrawCal() {
   ctx.clearRect(0, 0, calCanvas.width, calCanvas.height);
-  if (trackPts.length === 0) return;
-
+  if (!trackPts.length) return;
   for (let i = 0; i < trackPts.length - 1; i++) {
     const p1 = trackPts[i], p2 = trackPts[i + 1];
-    ctx.strokeStyle = '#888';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
     ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
     ctx.setLineDash([]);
-
     const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
     const dist = getSegDist(i);
     if (dist) {
       const lbl = dist + 'm';
-      ctx.font = 'bold 13px -apple-system, sans-serif';
+      ctx.font = 'bold 13px -apple-system,sans-serif';
       const tw = ctx.measureText(lbl).width;
-      ctx.fillStyle = 'rgba(30,30,30,0.75)';
+      ctx.fillStyle = 'rgba(30,30,30,.75)';
       ctx.fillRect(mx - tw/2 - 3, my - 12, tw + 6, 18);
       ctx.fillStyle = '#ddd';
       ctx.fillText(lbl, mx - tw/2, my + 1);
     }
   }
-
   const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   trackPts.forEach((pt, i) => {
     const color = NODE_COLORS[i % NODE_COLORS.length];
@@ -298,12 +340,11 @@ function redrawCal() {
     ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
     const lbl = labels[i] || String(i);
     const flip = pt.x + 40 > calCanvas.width;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
+    ctx.lineWidth = 2; ctx.beginPath();
     if (flip) { ctx.moveTo(pt.x - 22, pt.y); ctx.lineTo(pt.x - 10, pt.y); }
     else      { ctx.moveTo(pt.x + 10, pt.y); ctx.lineTo(pt.x + 22, pt.y); }
     ctx.stroke();
-    ctx.font = 'bold 14px -apple-system, sans-serif';
+    ctx.font = 'bold 14px -apple-system,sans-serif';
     ctx.fillText(lbl, flip ? pt.x - 42 : pt.x + 26, pt.y + 5);
   });
 }
@@ -322,60 +363,52 @@ function rebuildSegInputs() {
   for (let i = 0; i < trackPts.length - 1; i++) {
     const row = document.createElement('div');
     row.className = 'dist-row';
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;';
-    const badge = document.createElement('span');
-    badge.style.cssText = `display:inline-block;width:20px;height:20px;border-radius:50%;background:${NODE_COLORS[i % NODE_COLORS.length]};text-align:center;line-height:20px;font-size:11px;font-weight:700;color:#000;flex-shrink:0`;
-    badge.textContent = labels[i] || i;
+    const mkBadge = idx => {
+      const s = document.createElement('span');
+      s.style.cssText = `display:inline-block;width:17px;height:17px;border-radius:50%;background:${NODE_COLORS[idx % NODE_COLORS.length]};text-align:center;line-height:17px;font-size:10px;font-weight:700;color:#000;flex-shrink:0`;
+      s.textContent = labels[idx] || idx;
+      return s;
+    };
     const arrow = document.createElement('span');
-    arrow.style.color = 'var(--muted)';
-    arrow.textContent = '->';
-    const badge2 = document.createElement('span');
-    badge2.style.cssText = `display:inline-block;width:20px;height:20px;border-radius:50%;background:${NODE_COLORS[(i+1) % NODE_COLORS.length]};text-align:center;line-height:20px;font-size:11px;font-weight:700;color:#000;flex-shrink:0`;
-    badge2.textContent = labels[i + 1] || (i + 1);
+    arrow.textContent = '→'; arrow.style.color = 'var(--muted)';
     const inp = document.createElement('input');
     inp.type = 'number'; inp.min = '0.1'; inp.step = '0.5'; inp.placeholder = 'metres';
     inp.id = 'seg-dist-' + i;
-    inp.style.cssText = 'flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;';
+    inp.style.cssText = 'flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:12px;';
     inp.value = existing[i] || '';
-    inp.addEventListener('input', () => redrawCal());
-    const unit = document.createElement('span');
-    unit.style.color = 'var(--muted)'; unit.textContent = 'm';
-    row.append(badge, arrow, badge2, inp, unit);
+    inp.addEventListener('input', redrawCal);
+    const unit = document.createElement('span'); unit.textContent = 'm';
+    row.append(mkBadge(i), arrow, mkBadge(i + 1), inp, unit);
     wrap.appendChild(row);
   }
 }
 
 function updateCalState() {
-  const instr  = document.getElementById('cal-instruction');
+  const instr = document.getElementById('cal-instruction');
   const savBtn = document.getElementById('btn-save-cal');
   const n = trackPts.length;
   if (n === 0) {
-    instr.textContent = 'Click on the road to place point A, then keep clicking to extend the track.';
+    instr.innerHTML = 'Click on the road to place point <strong>A</strong>, then keep clicking to extend the track.';
     savBtn.disabled = true;
   } else if (n === 1) {
     instr.textContent = 'Click to place point B.';
     savBtn.disabled = true;
   } else {
-    instr.textContent = `${n} points, ${n-1} segment${n>2?'s':''}. Fill in the distances below, then save.`;
+    instr.textContent = `${n} points · ${n - 1} segment${n > 2 ? 's' : ''}. Enter distances below.`;
     savBtn.disabled = false;
   }
 }
 
 document.getElementById('btn-undo-pt').addEventListener('click', () => {
-  if (trackPts.length === 0) return;
-  trackPts.pop();
-  redrawCal();
-  rebuildSegInputs();
-  updateCalState();
+  if (!trackPts.length) return;
+  trackPts.pop(); redrawCal(); rebuildSegInputs(); updateCalState();
 });
 
 document.getElementById('btn-clear-cal').addEventListener('click', () => {
   trackPts = [];
   document.getElementById('seg-inputs').innerHTML = '';
-  document.getElementById('cal-status').textContent = '';
-  document.getElementById('btn-save-cal').disabled = true;
-  redrawCal();
-  updateCalState();
+  document.getElementById('cal-status-text').textContent = '';
+  redrawCal(); updateCalState();
 });
 
 document.getElementById('btn-save-cal').addEventListener('click', async () => {
@@ -386,20 +419,17 @@ document.getElementById('btn-save-cal').addEventListener('click', async () => {
     if (!v || v <= 0) { toast(`Enter distance for segment ${i + 1}`, true); return; }
     distances.push(v);
   }
-  const body = { points: trackPts, distances, frame_w: frameSize.w, frame_h: frameSize.h };
   const r = await fetch('/api/calibrate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ points: trackPts, distances, frame_w: frameSize.w, frame_h: frameSize.h }),
   });
   const d = await r.json();
-  if (d.ok) {
-    document.getElementById('cal-status').textContent =
-      `Saved — ${trackPts.length} points, ${distances.length} segment(s): ${distances.map(d=>d+'m').join(', ')}`;
-    document.getElementById('btn-start').disabled = false;
-    toast('Track calibration saved');
-  } else {
-    toast('Save failed: ' + d.error, true);
-  }
+  if (!d.ok) { toast('Calibrate failed: ' + d.error, true); return; }
+  document.getElementById('cal-status-text').textContent =
+    `✓ ${trackPts.length} pts · ${distances.map(v => v + 'm').join(', ')}`;
+  document.getElementById('btn-start').disabled = false;
+  toast('Track saved — starting…');
+  await _startPipeline();
 });
 
 async function tryLoadCal() {
@@ -409,58 +439,58 @@ async function tryLoadCal() {
     body: JSON.stringify({ frame_w: frameSize.w, frame_h: frameSize.h }),
   });
   const d = await r.json();
-  if (d.ok) {
-    const cal = d.calibration;
-    trackPts = cal.points;
-    rebuildSegInputs();
-    cal.distances.forEach((dist, i) => {
-      const inp = document.getElementById('seg-dist-' + i);
-      if (inp) inp.value = dist;
-    });
-    redrawCal();
-    updateCalState();
-    document.getElementById('cal-status').textContent =
-      `Loaded — ${trackPts.length} points, segments: ${cal.distances.map(d=>d+'m').join(', ')}`;
-    document.getElementById('btn-save-cal').disabled = false;
-    document.getElementById('btn-start').disabled = false;
-    toast('Saved track loaded');
-  }
+  if (!d.ok) return;
+  const cal = d.calibration;
+  trackPts = cal.points;
+  rebuildSegInputs();
+  cal.distances.forEach((dist, i) => {
+    const inp = document.getElementById('seg-dist-' + i);
+    if (inp) inp.value = dist;
+  });
+  redrawCal(); updateCalState();
+  document.getElementById('cal-status-text').textContent =
+    `Loaded · ${cal.distances.map(v => v + 'm').join(', ')}`;
+  document.getElementById('btn-save-cal').disabled = false;
+  document.getElementById('btn-start').disabled = false;
+  toast('Saved track loaded');
 }
 
 function refreshPreview() {
+  _isLive = false;
   calImg.src = '/preview_frame?' + Date.now();
+  calCanvas.classList.remove('no-interact');
+  document.getElementById('cal-hint').classList.remove('hidden');
 }
 
-// ── Controls ──────────────────────────────────────────────────────────────
-document.getElementById('btn-start').addEventListener('click', async () => {
+// ── Pipeline start / stop ─────────────────────────────────────────────────
+async function _startPipeline() {
   const units = document.getElementById('units-select').value;
   const r = await fetch('/api/start', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ units }),
   });
   const d = await r.json();
-  if (d.ok) {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(x => x.classList.remove('active'));
-    document.querySelector('[data-tab=live]').classList.add('active');
-    document.getElementById('tab-live').classList.add('active');
-    document.getElementById('live-img').src = '/video_feed?' + Date.now();
-  } else {
-    toast(d.error, true);
-  }
-});
+  if (!d.ok) { toast(d.error || 'Start failed', true); return; }
+  _isLive = true;
+  calImg.src = '/video_feed?' + Date.now();
+  calCanvas.classList.add('no-interact');
+  document.getElementById('cal-hint').classList.add('hidden');
+}
+
+document.getElementById('btn-start').addEventListener('click', _startPipeline);
 
 document.getElementById('btn-stop').addEventListener('click', async () => {
   await fetch('/api/stop', { method: 'POST' });
+  refreshPreview();
 });
 
 document.getElementById('btn-reset').addEventListener('click', async () => {
   await fetch('/api/reset', { method: 'POST' });
-  document.getElementById('kpi-last').textContent = '—';
-  document.getElementById('kpi-avg').textContent  = '—';
-  document.getElementById('kpi-count').textContent = '0';
-  document.getElementById('table-wrap').innerHTML = '<p style="color:var(--muted)">No detections yet.</p>';
-  document.getElementById('btn-csv').disabled = true;
+  kpiLastEl.textContent = '—'; kpiAvgEl.textContent = '—'; kpiCountEl.textContent = '0';
+  document.getElementById('table-wrap').innerHTML =
+    '<p style="padding:12px;color:var(--muted)">No detections yet.</p>';
+  btnCsv.disabled = true;
+  _lastDetections = [];
   toast('Stats reset');
 });
 
@@ -468,34 +498,114 @@ document.getElementById('btn-csv').addEventListener('click', () => {
   window.location = '/api/download_csv';
 });
 
+// ── Drag handle ───────────────────────────────────────────────────────────
+const workspace  = document.getElementById('workspace');
+const videoPane  = document.getElementById('video-pane');
+const mapPane    = document.getElementById('map-pane');
+const dragHandle = document.getElementById('drag-handle');
+let _dragging = false, _splitDir = 'h';
+
+dragHandle.addEventListener('mousedown', e => {
+  _dragging = true;
+  dragHandle.classList.add('active');
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = _splitDir === 'h' ? 'col-resize' : 'row-resize';
+  e.preventDefault();
+});
+
+window.addEventListener('mousemove', e => {
+  if (!_dragging) return;
+  const r = workspace.getBoundingClientRect();
+  const ratio = _splitDir === 'h'
+    ? Math.min(.85, Math.max(.15, (e.clientX - r.left) / r.width))
+    : Math.min(.85, Math.max(.15, (e.clientY - r.top)  / r.height));
+  videoPane.style.flex = `0 0 ${ratio * 100}%`;
+  mapPane.style.flex   = `0 0 ${(1 - ratio) * 100}%`;
+  if (_map) _map.invalidateSize();
+  resizeCanvas();
+});
+
+window.addEventListener('mouseup', () => {
+  if (!_dragging) return;
+  _dragging = false;
+  dragHandle.classList.remove('active');
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+  if (_map) _map.invalidateSize();
+  resizeCanvas();
+});
+
+// ── Split direction ───────────────────────────────────────────────────────
+document.getElementById('btn-split-dir').addEventListener('click', () => {
+  videoPane.style.flex = '';
+  mapPane.style.flex   = '';
+  _splitDir = _splitDir === 'h' ? 'v' : 'h';
+  workspace.classList.toggle('split-h', _splitDir === 'h');
+  workspace.classList.toggle('split-v', _splitDir === 'v');
+  document.getElementById('btn-split-dir').textContent = _splitDir === 'h' ? '⇄' : '⇅';
+  requestAnimationFrame(() => { if (_map) _map.invalidateSize(); resizeCanvas(); });
+});
+
+// ── Detections drawer ─────────────────────────────────────────────────────
+document.getElementById('det-header').addEventListener('click', () => {
+  const drawer = document.getElementById('det-drawer');
+  const open = drawer.classList.toggle('expanded');
+  drawer.classList.toggle('collapsed', !open);
+  requestAnimationFrame(() => { if (_map) _map.invalidateSize(); resizeCanvas(); });
+});
+
 // ── Stats polling ─────────────────────────────────────────────────────────
+function speedClass(spd, units) {
+  if (spd == null) return '';
+  const [lo, hi] = units === 'mph' ? [30, 60] : [50, 100];
+  return spd < lo ? 'speed-low' : spd < hi ? 'speed-mid' : 'speed-high';
+}
+
+const kpiLastEl  = document.getElementById('kpi-last');
+const kpiAvgEl   = document.getElementById('kpi-avg');
+const kpiCountEl = document.getElementById('kpi-count');
+const statusDot  = document.getElementById('status-dot');
+const statusTxt  = document.getElementById('status-text');
+const errEl      = document.getElementById('error-msg');
+const btnStop    = document.getElementById('btn-stop');
+const btnStart   = document.getElementById('btn-start');
+const btnCsv     = document.getElementById('btn-csv');
+
 let lastCount = 0;
+let _lastDetections = [], _lastUnits = 'mph';
 
 async function pollStats() {
   try {
     const r = await fetch('/api/stats');
     const d = await r.json();
 
-    const dot  = document.getElementById('status-dot');
-    const stxt = document.getElementById('status-text');
-    const errEl = document.getElementById('error-msg');
     if (d.running) {
-      dot.className = 'live'; stxt.textContent = 'Live';
-      document.getElementById('btn-stop').disabled = false;
-      document.getElementById('btn-start').disabled = true;
+      statusDot.className = 'live'; statusTxt.textContent = 'Live';
+      btnStop.disabled = false; btnStart.disabled = true;
+    } else if (d.error) {
+      statusDot.className = 'error'; statusTxt.textContent = 'Error';
+      btnStop.disabled = true; btnStart.disabled = false;
     } else {
-      dot.className = ''; stxt.textContent = 'Idle';
-      document.getElementById('btn-stop').disabled = true;
-      document.getElementById('btn-start').disabled = false;
+      statusDot.className = ''; statusTxt.textContent = 'Idle';
+      btnStop.disabled = true; btnStart.disabled = false;
     }
     errEl.textContent = d.error || '';
 
     if (d.last_speed !== null) {
-      document.getElementById('kpi-last').textContent = d.last_speed + ' ' + d.units;
-      document.getElementById('kpi-avg').textContent  = d.avg_speed  + ' ' + d.units;
+      kpiLastEl.textContent = d.last_speed + ' ' + d.units;
+      kpiAvgEl.textContent  = d.avg_speed  + ' ' + d.units;
+      kpiLastEl.className = 'kpi-value ' + speedClass(d.last_speed, d.units);
+      kpiAvgEl.className  = 'kpi-value ' + speedClass(d.avg_speed,  d.units);
     }
-    document.getElementById('kpi-count').textContent = d.count;
-    document.getElementById('btn-csv').disabled = d.count === 0;
+    kpiCountEl.textContent = d.count;
+    btnCsv.disabled = d.count === 0;
+
+    _lastDetections = d.detections;
+    _lastUnits = d.units;
+
+    const badge = document.getElementById('det-badge');
+    badge.textContent = d.count;
+    badge.classList.toggle('has-data', d.count > 0);
 
     if (d.count !== lastCount) {
       lastCount = d.count;
@@ -505,33 +615,213 @@ async function pollStats() {
 }
 
 function renderTable(rows, units) {
-  if (!rows || rows.length === 0) {
-    document.getElementById('table-wrap').innerHTML =
-      '<p style="color:var(--muted)">No detections yet.</p>';
+  const wrap = document.getElementById('table-wrap');
+  if (!rows || !rows.length) {
+    wrap.innerHTML = '<p style="padding:12px;color:var(--muted)">No detections yet.</p>';
     return;
   }
-  const speedCol = `speed_${units}`;
+  const sc = `speed_${units}`;
   let html = `<table><thead><tr>
     <th>Time</th><th>ID</th><th>Type</th><th>Speed (${units})</th><th>Dir</th>
   </tr></thead><tbody>`;
   [...rows].reverse().forEach(row => {
+    const spd = row[sc] ?? null;
     html += `<tr>
       <td>${row.time}</td>
       <td><span class="pill">#${row.id}</span></td>
       <td><span class="pill tag-info">${row.type}</span></td>
-      <td>${row[speedCol] ?? '—'}</td>
+      <td><span class="speed-badge ${speedClass(spd, units)}">${spd ?? '—'}</span></td>
       <td>${row.direction}</td>
     </tr>`;
   });
   html += '</tbody></table>';
-  document.getElementById('table-wrap').innerHTML = html;
+  wrap.innerHTML = html;
 }
 
 setInterval(pollStats, 800);
 pollStats();
 
+// ── Map ───────────────────────────────────────────────────────────────────
+const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const SAT_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+let _map, _tileLayer, _isSatellite = false;
+let _segPts = [], _segLine = null, _segMarkers = [], _detMarkers = [];
+let _nomLastCall = 0;
+
+requestAnimationFrame(() => {
+  _map = L.map('map-container', { center: [39.8283, -98.5795], zoom: 4 });
+  _tileLayer = L.tileLayer(OSM_URL, {
+    attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(_map);
+  _map.on('click', _onMapClick);
+  _loadMapState();
+});
+
+async function _nominatimSearch(q) {
+  const elapsed = Date.now() - _nomLastCall;
+  if (elapsed < 1100) await new Promise(r => setTimeout(r, 1100 - elapsed));
+  _nomLastCall = Date.now();
+  const resp = await fetch(
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,
+    { headers: { 'Accept-Language': 'en', 'User-Agent': 'speedcam-local/1.0' } }
+  );
+  if (!resp.ok) throw new Error(`Nominatim ${resp.status}`);
+  return resp.json();
+}
+
+function _onMapClick(e) {
+  if (_segPts.length >= 2) { _clearSegGraphics(); _segPts = []; }
+  const pt = { lat: e.latlng.lat, lng: e.latlng.lng };
+  _segPts.push(pt);
+  const isEnd = _segPts.length === 2;
+  const color = isEnd ? '#ff8c00' : '#00ffb4';
+  const m = L.circleMarker([pt.lat, pt.lng], { radius: 8, color, fillColor: color, fillOpacity: 1, weight: 2 })
+    .bindPopup(isEnd ? 'End' : 'Start')
+    .addTo(_map);
+  _segMarkers.push(m);
+  if (isEnd) {
+    _segLine = L.polyline(_segPts.map(p => [p.lat, p.lng]),
+      { color: '#0a84ff', weight: 4, opacity: .8, dashArray: '8 6' }).addTo(_map);
+    document.getElementById('btn-map-save-seg').disabled = false;
+  }
+  _updateSegInfo();
+}
+
+function _clearSegGraphics() {
+  _segMarkers.forEach(m => _map.removeLayer(m)); _segMarkers = [];
+  if (_segLine) { _map.removeLayer(_segLine); _segLine = null; }
+}
+
+function _clearDetMarkers() {
+  _detMarkers.forEach(m => _map.removeLayer(m)); _detMarkers = [];
+}
+
+function _updateSegInfo(msg) {
+  const el = document.getElementById('map-seg-label');
+  if (msg) { el.textContent = msg; return; }
+  if (_segPts.length === 2) {
+    const d = _haversineM(_segPts[0], _segPts[1]);
+    el.textContent = `Segment: ${d.toFixed(0)} m  |  ${_segPts[0].lat.toFixed(5)},${_segPts[0].lng.toFixed(5)} → ${_segPts[1].lat.toFixed(5)},${_segPts[1].lng.toFixed(5)}`;
+  } else if (_segPts.length === 1) {
+    el.textContent = 'Click a second point to complete the segment.';
+  } else {
+    el.textContent = 'Click two points on the map to mark the filmed road segment.';
+  }
+}
+
+function _haversineM(a, b) {
+  const R = 6371000, dLat = (b.lat - a.lat) * Math.PI / 180, dLng = (b.lng - a.lng) * Math.PI / 180;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+document.getElementById('btn-map-search').addEventListener('click', _doSearch);
+document.getElementById('map-search-input').addEventListener('keydown', e => { if (e.key === 'Enter') _doSearch(); });
+
+async function _doSearch() {
+  const q = document.getElementById('map-search-input').value.trim();
+  if (!q) return;
+  const btn = document.getElementById('btn-map-search');
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await _nominatimSearch(q);
+    if (!res.length) { toast('Location not found', true); return; }
+    _map.setView([parseFloat(res[0].lat), parseFloat(res[0].lon)], 16);
+    toast('📍 ' + res[0].display_name.split(',')[0]);
+  } catch (err) {
+    toast('Search error: ' + err.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔍 Search';
+  }
+}
+
+document.getElementById('btn-map-tile-toggle').addEventListener('click', () => {
+  _isSatellite = !_isSatellite;
+  _map.removeLayer(_tileLayer);
+  if (_isSatellite) {
+    _tileLayer = L.tileLayer(SAT_URL, { attribution: 'Tiles © Esri', maxZoom: 19 }).addTo(_map);
+    document.getElementById('btn-map-tile-toggle').textContent = '🗺 Street';
+  } else {
+    _tileLayer = L.tileLayer(OSM_URL, {
+      attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors', maxZoom: 19,
+    }).addTo(_map);
+    document.getElementById('btn-map-tile-toggle').textContent = '🛰 Satellite';
+  }
+});
+
+document.getElementById('btn-map-clear-seg').addEventListener('click', () => {
+  _clearSegGraphics(); _clearDetMarkers(); _segPts = [];
+  document.getElementById('btn-map-save-seg').disabled = true;
+  _updateSegInfo();
+  fetch('/api/map_segment', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ points: [], label: '' }) });
+});
+
+document.getElementById('btn-map-save-seg').addEventListener('click', async () => {
+  if (_segPts.length < 2) return;
+  const label = document.getElementById('map-search-input').value.trim();
+  const r = await fetch('/api/map_segment', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ points: _segPts, label }),
+  });
+  const d = await r.json();
+  if (d.ok) { toast('Segment saved'); _overlayDetections(); }
+  else toast('Save failed: ' + d.error, true);
+});
+
+async function _loadMapState() {
+  try {
+    const r = await fetch('/api/map_segment'); const d = await r.json();
+    if (d.location) _map.setView([d.location.lat, d.location.lng], 16);
+    if (d.segment?.points?.length >= 2) {
+      _segPts = d.segment.points;
+      _segPts.forEach((pt, i) => {
+        const color = i === 0 ? '#00ffb4' : '#ff8c00';
+        const sm = L.circleMarker([pt.lat, pt.lng], { radius: 8, color, fillColor: color, fillOpacity: 1, weight: 2 })
+          .bindPopup(i === 0 ? 'Start' : 'End')
+          .addTo(_map);
+        _segMarkers.push(sm);
+      });
+      _segLine = L.polyline(_segPts.map(p => [p.lat, p.lng]),
+        { color: '#0a84ff', weight: 4, opacity: .8, dashArray: '8 6' }).addTo(_map);
+      document.getElementById('btn-map-save-seg').disabled = false;
+      _updateSegInfo(); _overlayDetections();
+    }
+  } catch(e) { /* non-fatal */ }
+}
+
+function _spdColor(spd, units) {
+  const [lo, hi] = units === 'mph' ? [30, 60] : [50, 100];
+  const t = Math.min(1, Math.max(0, (spd - lo) / (hi - lo)));
+  return t < 0.5 ? _lerpHex('#30d158', '#ffd60a', t * 2) : _lerpHex('#ffd60a', '#ff453a', (t - .5) * 2);
+}
+
+function _lerpHex(a, b, t) {
+  const ah = parseInt(a.slice(1), 16), bh = parseInt(b.slice(1), 16);
+  const lerp = s => Math.round(((ah >> s) & 0xff) + (((bh >> s) & 0xff) - ((ah >> s) & 0xff)) * t).toString(16).padStart(2, '0');
+  return '#' + lerp(16) + lerp(8) + lerp(0);
+}
+
+function _overlayDetections() {
+  if (!_map || _segPts.length < 2 || !_lastDetections.length) return;
+  _clearDetMarkers();
+  const [s, e] = [_segPts[0], _segPts[1]];
+  _lastDetections.forEach((det, i) => {
+    const t = _lastDetections.length === 1 ? 0.5 : i / (_lastDetections.length - 1);
+    const lat = s.lat + (e.lat - s.lat) * t, lng = s.lng + (e.lng - s.lng) * t;
+    const spd = det[`speed_${_lastUnits}`] ?? 0;
+    const dm = L.circleMarker([lat, lng], { radius: 7, color: '#fff', weight: 1.5,
+      fillColor: _spdColor(spd, _lastUnits), fillOpacity: .9 })
+      .bindPopup(`<strong>#${det.id}</strong> ${det.type}<br>${spd} ${_lastUnits}<br><small>${det.time} · ${det.direction}</small>`)
+      .addTo(_map);
+    _detMarkers.push(dm);
+  });
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────
-function toast(msg, isError=false) {
+function toast(msg, isError = false) {
   const el = document.getElementById('toast');
   el.textContent = (isError ? '⚠ ' : '✓ ') + msg;
   el.style.borderColor = isError ? 'var(--red)' : 'var(--green)';
