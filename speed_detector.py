@@ -263,15 +263,15 @@ def run(args: argparse.Namespace) -> None:
             tracks       = tracker.update(detections, frame=frame)
             speed_records = estimator.update(tracks, frame_ts=frame_ts)
 
-            # Log first speed reading per track to CSV
+            # Log to CSV once per car, only when actually moving
             for tid, record in speed_records.items():
-                if tid not in logged_ids:
+                speed_val = record.speed_mph if args.units == "mph" else record.speed_kph
+                if speed_val > 0 and tid not in logged_ids:
                     track = tracks.get(tid)
                     if track:
                         _write_row(csv_writer, track, record)
                         csv_fh.flush()
                         logged_ids.add(tid)
-                        speed_val = record.speed_mph if args.units == "mph" else record.speed_kph
                         speeds_seen.append(speed_val)
 
             # Annotate frame

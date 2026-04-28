@@ -61,10 +61,14 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
                             records[tid] = prior
 
                 with _lock:
+                    frame_max_spd = 0.0
                     for tid, rec in records.items():
-                        if tid not in _state["logged_ids"]:
-                            spd = rec.speed_mph if units == "mph" else rec.speed_kph
-                            _state["speeds_seen"].append(spd)
+                        spd = rec.speed_mph if units == "mph" else rec.speed_kph
+
+                        # Log to detection table once per car, but only once
+                        # the car is actually moving — avoids logging 0 mph for
+                        # cars that start stationary then drive away.
+                        if spd > 0 and tid not in _state["logged_ids"]:
                             _state["logged_ids"].add(tid)
                             trk = tracks.get(tid)
                             _state["detections"].append({
@@ -74,6 +78,16 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
                                 f"speed_{units}": round(spd, 1),
                                 "direction": rec.direction,
                             })
+
+                        if spd > frame_max_spd:
+                            frame_max_spd = spd
+
+                    # Keep speeds_seen as a rolling buffer of per-frame max speeds
+                    # so Last/Avg KPIs always reflect the current state.
+                    if frame_max_spd > 0:
+                        _state["speeds_seen"].append(frame_max_spd)
+                        if len(_state["speeds_seen"]) > 200:
+                            _state["speeds_seen"] = _state["speeds_seen"][-200:]
 
                     spds = _state["speeds_seen"]
                     last_spd = spds[-1] if spds else None
