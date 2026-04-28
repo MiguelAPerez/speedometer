@@ -66,14 +66,33 @@ def source_key(source: str | int) -> str:
     return src  # URL or other identifier
 
 
+def is_live_camera(source: str | int) -> bool:
+    """Return True only for webcam/device-index sources (not files or URLs)."""
+    if isinstance(source, int):
+        return True
+    src = str(source)
+    return src.isdigit()
+
+
+def clear_calibration(source: str | int) -> None:
+    """Remove any saved calibration entry for *source* from calibration.json."""
+    key = source_key(source)
+    data = _load_json()
+    if key in data:
+        del data[key]
+        _save_json(data)
+
+
 def load_calibration(source: str | int, frame_w: int, frame_h: int) -> Optional[dict]:
     """
-    Load saved calibration for *source*.
+    Load saved track calibration for *source*.
 
-    If saved frame size differs from *frame_w* / *frame_h*, the line
-    positions are scaled proportionally before being returned.
+    Returns a dict with keys:
+      points    — list of {x, y} dicts (pixel coords scaled to current frame)
+      distances — list of floats (real-world metres per segment)
+      frame_w, frame_h
 
-    Returns None if no calibration is found for this source.
+    Returns None if no valid calibration exists for this source.
     """
     key = source_key(source)
     data = _load_json()
@@ -81,22 +100,23 @@ def load_calibration(source: str | int, frame_w: int, frame_h: int) -> Optional[
     if entry is None:
         return None
 
+    # Must be the track format
+    if "points" not in entry or "distances" not in entry:
+        return None
+
     saved_w = entry.get("frame_w", frame_w)
     saved_h = entry.get("frame_h", frame_h)
+    scale_x = frame_w / saved_w if saved_w else 1.0
+    scale_y = frame_h / saved_h if saved_h else 1.0
 
-    line_a_y = entry["line_a_y"]
-    line_b_y = entry["line_b_y"]
-
-    # Scale if frame size changed
-    if saved_h != frame_h:
-        scale = frame_h / saved_h
-        line_a_y = line_a_y * scale
-        line_b_y = line_b_y * scale
+    points = [
+        {"x": p["x"] * scale_x, "y": p["y"] * scale_y}
+        for p in entry["points"]
+    ]
 
     return {
-        "line_a_y": line_a_y,
-        "line_b_y": line_b_y,
-        "distance_m": entry["distance_m"],
+        "points": points,
+        "distances": entry["distances"],
         "frame_w": frame_w,
         "frame_h": frame_h,
     }
@@ -104,19 +124,22 @@ def load_calibration(source: str | int, frame_w: int, frame_h: int) -> Optional[
 
 def save_calibration(
     source: str | int,
-    line_a_y: float,
-    line_b_y: float,
-    distance_m: float,
+    points: list,
+    distances: list,
     frame_w: int,
     frame_h: int,
 ) -> None:
-    """Persist calibration for *source* to calibration.json."""
+    """
+    Persist track calibration for *source* to calibration.json.
+
+    points    — list of {x, y} dicts
+    distances — list of floats, length = len(points) - 1
+    """
     key = source_key(source)
     data = _load_json()
     data[key] = {
-        "line_a_y": line_a_y,
-        "line_b_y": line_b_y,
-        "distance_m": distance_m,
+        "points": points,
+        "distances": distances,
         "frame_w": frame_w,
         "frame_h": frame_h,
         "created_at": datetime.now(timezone.utc).isoformat(),

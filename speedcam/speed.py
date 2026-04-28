@@ -63,17 +63,36 @@ class SpeedEstimator:
 
     def __init__(
         self,
-        meters_per_pixel: float,
+        scale_pts: list,          # [(mid_y_px, mpp), ...] sorted by mid_y ascending
         window: int = 15,
         min_samples: int = 3,
         min_speed_mph: float = 2.0,
     ):
-        self._mpp = meters_per_pixel
+        # scale_pts is a list of (y_pixel, metres_per_pixel) control points.
+        # A single entry means constant scale (backwards-compat / simple case).
+        self._scale_pts = sorted(scale_pts, key=lambda p: p[0])
         self._window = window
         self._min_samples = min_samples
         self._min_speed_mps = min_speed_mph / self.MPS_TO_MPH
         self._states: Dict[int, _TrackState] = {}
-        self._logged: Dict[int, SpeedRecord] = {}  # last confirmed record per track
+        self._logged: Dict[int, SpeedRecord] = {}
+
+    def _mpp_at(self, y: float) -> float:
+        """Return interpolated metres-per-pixel at the given frame y-coordinate."""
+        pts = self._scale_pts
+        if len(pts) == 1:
+            return pts[0][1]
+        if y <= pts[0][0]:
+            return pts[0][1]
+        if y >= pts[-1][0]:
+            return pts[-1][1]
+        for i in range(len(pts) - 1):
+            y0, m0 = pts[i]
+            y1, m1 = pts[i + 1]
+            if y0 <= y <= y1:
+                t = (y - y0) / (y1 - y0)
+                return m0 + t * (m1 - m0)
+        return pts[-1][1]
 
     # ------------------------------------------------------------------
     # Public API
@@ -108,8 +127,11 @@ class SpeedEstimator:
         results: Dict[int, SpeedRecord] = {}
 
         for tid, track in tracks.items():
+            # Only use frames where the detector actually saw the vehicle —
+            # skip Kalman-only predictions to avoid ghost displacement readings
+            if not getattr(track, "detected_this_frame", True):
+                continue
             if track.missing_frames > 0:
-                # Don't compute speed on frames where the track was interpolated
                 continue
 
             state = self._states.setdefault(tid, _TrackState())
@@ -121,7 +143,20 @@ class SpeedEstimator:
                     dx = cx - state.last_centroid[0]
                     dy = cy - state.last_centroid[1]
                     displacement_px = (dx ** 2 + dy ** 2) ** 0.5
-                    speed_mps = (displacement_px * self._mpp) / dt
+                    # Use scale at the car's current y-position
+                    speed_mps = (displacement_px * self._mpp_at(cy)) / dt
+
+                    # Spike rejection — if this single sample is more than 3×
+                    # the current rolling average, it's almost certainly a
+                    # false reading caused by a track re-assignment or
+                    # detector hiccup.  Discard it.
+                    if state.speed_window:
+                        current_avg = sum(s for s, _ in state.speed_window) / len(state.speed_window)
+                        if current_avg > 0 and speed_mps > current_avg * 3.0:
+                            state.last_centroid = (cx, cy)
+                            state.last_ts = now
+                            continue
+
                     state.speed_window.append((speed_mps, dx))
 
             state.last_centroid = (cx, cy)
@@ -160,10 +195,30 @@ class SpeedEstimator:
         self._logged.clear()
 
     @classmethod
-    def from_calibration(cls, line_a_y: float, line_b_y: float, distance_m: float, **kwargs) -> "SpeedEstimator":
-        """Convenience constructor: compute meters_per_pixel from calibration lines."""
-        span_px = abs(line_b_y - line_a_y)
-        if span_px == 0:
-            raise ValueError("line_a_y and line_b_y must be different pixel positions")
-        mpp = distance_m / span_px
-        return cls(meters_per_pixel=mpp, **kwargs)
+    def from_track(cls, points: list, distances: list, **kwargs) -> "SpeedEstimator":
+        """
+        Build a depth-aware estimator from a multi-segment track calibration.
+
+        points    — list of {x, y} dicts (pixel coordinates)
+        distances — list of floats, len = len(points) - 1
+
+        Each segment i connects points[i] → points[i+1] with a known
+        real-world distance distances[i].  The scale (metres-per-pixel) is
+        computed for each segment using its Euclidean pixel length, then
+        stored at the segment midpoint y.  At runtime, speed.py interpolates
+        between segments based on the vehicle's y-position in the frame.
+        """
+        if len(points) < 2 or len(distances) != len(points) - 1:
+            raise ValueError("Need at least 2 points and one distance per segment")
+
+        scale_pts = []
+        for i, dist_m in enumerate(distances):
+            p1, p2 = points[i], points[i + 1]
+            span_px = ((p2["x"] - p1["x"]) ** 2 + (p2["y"] - p1["y"]) ** 2) ** 0.5
+            if span_px < 1:
+                raise ValueError(f"Segment {i} points are too close together")
+            mpp = dist_m / span_px
+            mid_y = (p1["y"] + p2["y"]) / 2
+            scale_pts.append((mid_y, mpp))
+
+        return cls(scale_pts=scale_pts, **kwargs)

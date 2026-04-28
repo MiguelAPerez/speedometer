@@ -82,9 +82,11 @@ def draw_tracks(
         record = speed_records.get(tid)
         if record:
             spd = record.speed_mph if units == "mph" else record.speed_kph
-            # ASCII direction — OpenCV's font can't render unicode arrows
-            direction = ">>" if record.direction == "→" else "<<"
-            label = f"#{tid} {spd:.1f} {units} {direction}"
+            if spd > 0.5:
+                direction = ">>" if record.direction == "→" else "<<"
+                label = f"#{tid} {spd:.1f} {units} {direction}"
+            else:
+                label = f"#{tid} stopped"
         else:
             label = f"#{tid} {track.label}"
 
@@ -97,38 +99,56 @@ def draw_tracks(
     return frame
 
 
-def draw_calibration_markers(
+def draw_track(
     frame: np.ndarray,
-    line_a_y: Optional[float],
-    line_b_y: Optional[float],
+    points: list,        # [{"x": float, "y": float}, ...]
+    distances: list,     # [float, ...]  len = len(points) - 1
 ) -> np.ndarray:
-    """Draw small dot+crosshair markers for the two calibration reference levels."""
+    """
+    Draw the calibration track onto a live frame.
+
+    Each node is a labelled dot; segments are connected by lines with the
+    real-world distance shown at the midpoint.
+    """
+    if not points:
+        return frame
     h, w = frame.shape[:2]
-    margin = 24  # pixels from left edge
+    node_colours = [LINE_A_COLOUR, LINE_B_COLOUR, (200, 80, 255), (255, 200, 0), (0, 200, 255)]
 
-    for y_val, colour, label in [
-        (line_a_y, LINE_A_COLOUR, "A"),
-        (line_b_y, LINE_B_COLOUR, "B"),
-    ]:
-        if y_val is None:
-            continue
-        y = int(y_val)
-        cx = margin
+    pts_px = [(int(p["x"]), int(p["y"])) for p in points]
 
-        # Outer ring
-        cv2.circle(frame, (cx, y), 10, colour, 2, cv2.LINE_AA)
-        # Filled centre dot
-        cv2.circle(frame, (cx, y), 3, colour, -1, cv2.LINE_AA)
-        # Short horizontal tick extending right
-        cv2.line(frame, (cx + 10, y), (cx + 22, y), colour, 2, cv2.LINE_AA)
-        # Label
-        cv2.putText(frame, label, (cx + 26, y + 5), FONT, 0.55, colour, 1, cv2.LINE_AA)
+    # Segment lines + distance labels
+    for i, dist in enumerate(distances):
+        x1, y1 = pts_px[i]
+        x2, y2 = pts_px[i + 1]
+        cv2.line(frame, (x1, y1), (x2, y2), (180, 180, 180), 1, cv2.LINE_AA)
+        mx, my = (x1 + x2) // 2, (y1 + y2) // 2
+        label = f"{dist:.1f}m"
+        (tw, th), _ = cv2.getTextSize(label, FONT, 0.45, 1)
+        cv2.rectangle(frame, (mx - 2, my - th - 2), (mx + tw + 2, my + 2), (40, 40, 40), -1)
+        cv2.putText(frame, label, (mx, my), FONT, 0.45, (220, 220, 220), 1, cv2.LINE_AA)
+
+    # Node dots
+    labels = [chr(65 + i) for i in range(len(pts_px))]   # A, B, C, D ...
+    for i, (cx, cy) in enumerate(pts_px):
+        colour = node_colours[i % len(node_colours)]
+        cv2.circle(frame, (cx, cy), 10, colour, 2, cv2.LINE_AA)
+        cv2.circle(frame, (cx, cy), 3, colour, -1, cv2.LINE_AA)
+        lbl = labels[i]
+        flip = cx + 40 >= w
+        if flip:
+            cv2.line(frame, (cx - 22, cy), (cx - 10, cy), colour, 2, cv2.LINE_AA)
+            cv2.putText(frame, lbl, (cx - 40, cy + 5), FONT, 0.55, colour, 1, cv2.LINE_AA)
+        else:
+            cv2.line(frame, (cx + 10, cy), (cx + 22, cy), colour, 2, cv2.LINE_AA)
+            cv2.putText(frame, lbl, (cx + 26, cy + 5), FONT, 0.55, colour, 1, cv2.LINE_AA)
 
     return frame
 
 
-# Keep old name as alias so any direct callers don't break
-draw_calibration_lines = draw_calibration_markers
+# Alias for backwards compatibility
+draw_calibration_lines = draw_track
+draw_calibration_markers = draw_track
 
 
 def draw_hud(

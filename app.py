@@ -24,9 +24,9 @@ import cv2
 import numpy as np
 from flask import Flask, Response, jsonify, render_template_string, request, send_file
 
-from speedcam.core import VideoSource, load_calibration, save_calibration, source_key
+from speedcam.core import VideoSource, load_calibration, save_calibration, source_key, clear_calibration, is_live_camera
 from speedcam.detector import Detector
-from speedcam.overlay import draw_calibration_lines, draw_hud, draw_tracks
+from speedcam.overlay import draw_track, draw_hud, draw_tracks
 from speedcam.speed import SpeedEstimator
 from speedcam.tracker import CentroidTracker
 
@@ -72,13 +72,12 @@ def _pipeline(source, calibration: dict, units: str):
     try:
         detector = Detector()
         tracker = CentroidTracker()
-        estimator = SpeedEstimator.from_calibration(
-            calibration["line_a_y"],
-            calibration["line_b_y"],
-            calibration["distance_m"],
+        estimator = SpeedEstimator.from_track(
+            calibration["points"],
+            calibration["distances"],
         )
-        line_a_y = calibration["line_a_y"]
-        line_b_y = calibration["line_b_y"]
+        cal_points    = calibration["points"]
+        cal_distances = calibration["distances"]
 
         try:
             vs = VideoSource(source)
@@ -129,7 +128,7 @@ def _pipeline(source, calibration: dict, units: str):
                     avg_spd = sum(spds) / len(spds) if spds else None
                     count = len(_state["logged_ids"])
 
-                draw_calibration_lines(frame, line_a_y, line_b_y)
+                draw_track(frame, cal_points, cal_distances)
                 draw_tracks(frame, tracks, records, units=units)
                 draw_hud(frame, last_spd, avg_spd, count, units=units)
 
@@ -278,24 +277,26 @@ def grab_webcam_frame():
 
 @app.route("/api/calibrate", methods=["POST"])
 def calibrate():
-    """Save calibration for the current source."""
+    """Save track calibration for the current source."""
     data = request.json
     try:
-        line_a_y = float(data["line_a_y"])
-        line_b_y = float(data["line_b_y"])
-        distance_m = float(data["distance_m"])
-        frame_w = int(data["frame_w"])
-        frame_h = int(data["frame_h"])
+        points    = data["points"]     # [{x, y}, ...]
+        distances = data["distances"]  # [float, ...]
+        frame_w   = int(data["frame_w"])
+        frame_h   = int(data["frame_h"])
+        if len(points) < 2 or len(distances) != len(points) - 1:
+            raise ValueError("Need at least 2 points and one distance per segment")
+        distances = [float(d) for d in distances]
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({"ok": False, "error": str(e)}), 400
 
     with _lock:
         src = _state["tmp_video_path"] if _state["tmp_video_path"] else 0
 
-    save_calibration(src, line_a_y, line_b_y, distance_m, frame_w, frame_h)
+    save_calibration(src, points, distances, frame_w, frame_h)
 
-    cal = {"line_a_y": line_a_y, "line_b_y": line_b_y,
-           "distance_m": distance_m, "frame_w": frame_w, "frame_h": frame_h}
+    cal = {"points": points, "distances": distances,
+           "frame_w": frame_w, "frame_h": frame_h}
     with _lock:
         _state["calibration"] = cal
 
@@ -304,13 +305,24 @@ def calibrate():
 
 @app.route("/api/load_calibration", methods=["POST"])
 def load_cal():
-    """Try to load saved calibration for the current source."""
+    """Try to load saved calibration for the current source.
+
+    For video files and streams the saved entry is cleared immediately —
+    they always need a fresh calibration.
+    """
     data = request.json or {}
     frame_w = int(data.get("frame_w", 0))
     frame_h = int(data.get("frame_h", 0))
 
     with _lock:
         src = _state["tmp_video_path"] if _state["tmp_video_path"] else 0
+
+    # Files and streams: wipe any stale calibration and force recalibration.
+    if not is_live_camera(src):
+        clear_calibration(src)
+        with _lock:
+            _state["calibration"] = None
+        return jsonify({"ok": False})
 
     if frame_w and frame_h:
         cal = load_calibration(src, frame_w, frame_h)
@@ -562,23 +574,22 @@ HTML = """<!DOCTYPE html>
       <span class="cal-hint">or upload a video file in the sidebar</span>
     </div>
 
-    <div class="cal-hint" id="cal-instruction">
-      <span class="line-badge line-a"></span>Click to place <strong>Line A</strong> &nbsp;|&nbsp;
-      <span class="line-badge line-b"></span>then <strong>Line B</strong>
-    </div>
+    <div class="cal-hint" id="cal-instruction">Click on the road to place point <strong>A</strong>, then keep clicking to extend the track. Enter each segment's distance below.</div>
 
     <div id="cal-wrap">
       <img id="cal-img" src="/preview_frame" alt="preview">
       <canvas id="cal-canvas"></canvas>
     </div>
 
-    <div class="dist-row">
-      <input type="number" id="dist-input" value="10" min="0.1" step="0.5" placeholder="10">
-      <span>metres between lines</span>
-      <button class="btn btn-primary" id="btn-save-cal" style="width:auto;padding:8px 16px" disabled>💾 Save calibration</button>
-      <button class="btn btn-neutral" id="btn-clear-cal" style="width:auto;padding:8px 12px">✕ Clear</button>
+    <!-- Per-segment distance inputs injected here by JS -->
+    <div id="seg-inputs" style="display:flex;flex-direction:column;gap:8px"></div>
+
+    <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="btn-save-cal" style="width:auto;padding:8px 16px" disabled>💾 Save track</button>
+      <button class="btn btn-neutral" id="btn-undo-pt" style="width:auto;padding:8px 12px">↩ Undo last point</button>
+      <button class="btn btn-neutral" id="btn-clear-cal" style="width:auto;padding:8px 12px">✕ Clear all</button>
     </div>
-    <div id="cal-status" style="font-size:12px;color:var(--muted)"></div>
+    <div id="cal-status" style="font-size:12px;color:var(--muted);margin-top:4px"></div>
   </div>
 
   <!-- LIVE TAB -->
@@ -646,12 +657,15 @@ async function uploadFile(file) {
   }
 }
 
-// ── Calibration canvas ────────────────────────────────────────────────────
+// ── Calibration track drawer ──────────────────────────────────────────────
 const calImg    = document.getElementById('cal-img');
 const calCanvas = document.getElementById('cal-canvas');
 const ctx       = calCanvas.getContext('2d');
-let clicks = [];   // [{y_rel}]  — y as fraction of image height
+
+let trackPts  = [];   // [{x, y}, ...]  pixel coords in natural image space
 let frameSize = { w: 0, h: 0 };
+
+const NODE_COLORS = ['#00ffb4','#ff8c00','#c850ff','#ffe066','#00cfff','#ff6b6b'];
 
 calImg.addEventListener('load', () => {
   calCanvas.width  = calImg.naturalWidth;
@@ -672,58 +686,141 @@ document.getElementById('btn-grab-webcam').addEventListener('click', async () =>
 });
 
 calCanvas.addEventListener('click', e => {
-  if (clicks.length >= 2) return;
   const rect = calCanvas.getBoundingClientRect();
-  const scaleY = calCanvas.height / rect.height;
-  const y = (e.clientY - rect.top) * scaleY;
-  clicks.push(y);
+  const sx = calCanvas.width  / rect.width;
+  const sy = calCanvas.height / rect.height;
+  trackPts.push({ x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy });
   redrawCal();
+  rebuildSegInputs();
   updateCalState();
 });
 
 function redrawCal() {
   ctx.clearRect(0, 0, calCanvas.width, calCanvas.height);
-  const colors = ['#00ffb4', '#ff8c00'];
-  const labels = ['A', 'B'];
-  clicks.forEach((y, i) => {
-    ctx.strokeStyle = colors[i];
+  if (trackPts.length === 0) return;
+
+  // Segment lines
+  for (let i = 0; i < trackPts.length - 1; i++) {
+    const p1 = trackPts[i], p2 = trackPts[i + 1];
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Distance label at midpoint
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    const dist = getSegDist(i);
+    if (dist) {
+      const lbl = dist + 'm';
+      ctx.font = 'bold 13px -apple-system, sans-serif';
+      const tw = ctx.measureText(lbl).width;
+      ctx.fillStyle = 'rgba(30,30,30,0.75)';
+      ctx.fillRect(mx - tw/2 - 3, my - 12, tw + 6, 18);
+      ctx.fillStyle = '#ddd';
+      ctx.fillText(lbl, mx - tw/2, my + 1);
+    }
+  }
+
+  // Nodes
+  const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  trackPts.forEach((pt, i) => {
+    const color = NODE_COLORS[i % NODE_COLORS.length];
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, 10, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
+    const lbl = labels[i] || String(i);
+    const flip = pt.x + 40 > calCanvas.width;
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(calCanvas.width, y); ctx.stroke();
-    ctx.fillStyle = colors[i];
-    ctx.font = 'bold 18px -apple-system, sans-serif';
-    ctx.fillText(labels[i], 10, y - 6);
+    ctx.beginPath();
+    if (flip) { ctx.moveTo(pt.x - 22, pt.y); ctx.lineTo(pt.x - 10, pt.y); }
+    else      { ctx.moveTo(pt.x + 10, pt.y); ctx.lineTo(pt.x + 22, pt.y); }
+    ctx.stroke();
+    ctx.font = 'bold 14px -apple-system, sans-serif';
+    ctx.fillText(lbl, flip ? pt.x - 42 : pt.x + 26, pt.y + 5);
   });
 }
 
+function getSegDist(i) {
+  const inp = document.getElementById('seg-dist-' + i);
+  return inp ? inp.value : '';
+}
+
+function rebuildSegInputs() {
+  const wrap = document.getElementById('seg-inputs');
+  // Preserve existing values
+  const existing = [];
+  wrap.querySelectorAll('input').forEach(inp => existing.push(inp.value));
+  wrap.innerHTML = '';
+  const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  for (let i = 0; i < trackPts.length - 1; i++) {
+    const row = document.createElement('div');
+    row.className = 'dist-row';
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;';
+    const badge = document.createElement('span');
+    badge.style.cssText = `display:inline-block;width:20px;height:20px;border-radius:50%;background:${NODE_COLORS[i % NODE_COLORS.length]};text-align:center;line-height:20px;font-size:11px;font-weight:700;color:#000;flex-shrink:0`;
+    badge.textContent = labels[i] || i;
+    const arrow = document.createElement('span');
+    arrow.style.color = 'var(--muted)';
+    arrow.textContent = '->';
+    const badge2 = document.createElement('span');
+    badge2.style.cssText = `display:inline-block;width:20px;height:20px;border-radius:50%;background:${NODE_COLORS[(i+1) % NODE_COLORS.length]};text-align:center;line-height:20px;font-size:11px;font-weight:700;color:#000;flex-shrink:0`;
+    badge2.textContent = labels[i + 1] || (i + 1);
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.min = '0.1'; inp.step = '0.5'; inp.placeholder = 'metres';
+    inp.id = 'seg-dist-' + i;
+    inp.style.cssText = 'flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;';
+    inp.value = existing[i] || '';
+    inp.addEventListener('input', () => redrawCal());
+    const unit = document.createElement('span');
+    unit.style.color = 'var(--muted)'; unit.textContent = 'm';
+    row.append(badge, arrow, badge2, inp, unit);
+    wrap.appendChild(row);
+  }
+}
+
 function updateCalState() {
-  const instr = document.getElementById('cal-instruction');
+  const instr  = document.getElementById('cal-instruction');
   const savBtn = document.getElementById('btn-save-cal');
-  if (clicks.length === 0) {
-    instr.innerHTML = '<span class="line-badge line-a"></span>Click to place <strong>Line A</strong>';
-  } else if (clicks.length === 1) {
-    instr.innerHTML = '<span class="line-badge line-b"></span>Now click to place <strong>Line B</strong>';
+  const n = trackPts.length;
+  if (n === 0) {
+    instr.textContent = 'Click on the road to place point A, then keep clicking to extend the track.';
+    savBtn.disabled = true;
+  } else if (n === 1) {
+    instr.textContent = 'Click to place point B.';
+    savBtn.disabled = true;
   } else {
-    instr.innerHTML = '✅ Both lines set — enter the distance and save.';
+    instr.textContent = `${n} points, ${n-1} segment${n>2?'s':''}. Fill in the distances below, then save.`;
     savBtn.disabled = false;
   }
 }
 
+document.getElementById('btn-undo-pt').addEventListener('click', () => {
+  if (trackPts.length === 0) return;
+  trackPts.pop();
+  redrawCal();
+  rebuildSegInputs();
+  updateCalState();
+});
+
 document.getElementById('btn-clear-cal').addEventListener('click', () => {
-  clicks = [];
+  trackPts = [];
+  document.getElementById('seg-inputs').innerHTML = '';
+  document.getElementById('cal-status').textContent = '';
+  document.getElementById('btn-save-cal').disabled = true;
   redrawCal();
   updateCalState();
-  document.getElementById('btn-save-cal').disabled = true;
-  document.getElementById('cal-status').textContent = '';
 });
 
 document.getElementById('btn-save-cal').addEventListener('click', async () => {
-  if (clicks.length < 2 || !frameSize.w) return;
-  const dist = parseFloat(document.getElementById('dist-input').value);
-  if (!dist || dist <= 0) { toast('Enter a valid distance', true); return; }
-  const body = {
-    line_a_y: clicks[0], line_b_y: clicks[1],
-    distance_m: dist, frame_w: frameSize.w, frame_h: frameSize.h,
-  };
+  if (trackPts.length < 2 || !frameSize.w) return;
+  const distances = [];
+  for (let i = 0; i < trackPts.length - 1; i++) {
+    const v = parseFloat(getSegDist(i));
+    if (!v || v <= 0) { toast(`Enter distance for segment ${i + 1}`, true); return; }
+    distances.push(v);
+  }
+  const body = { points: trackPts, distances, frame_w: frameSize.w, frame_h: frameSize.h };
   const r = await fetch('/api/calibrate', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -731,9 +828,9 @@ document.getElementById('btn-save-cal').addEventListener('click', async () => {
   const d = await r.json();
   if (d.ok) {
     document.getElementById('cal-status').textContent =
-      `Saved — A: ${clicks[0].toFixed(0)}px, B: ${clicks[1].toFixed(0)}px, ${dist}m`;
+      `Saved — ${trackPts.length} points, ${distances.length} segment(s): ${distances.map(d=>d+'m').join(', ')}`;
     document.getElementById('btn-start').disabled = false;
-    toast('Calibration saved');
+    toast('Track calibration saved');
   } else {
     toast('Save failed: ' + d.error, true);
   }
@@ -748,14 +845,20 @@ async function tryLoadCal() {
   const d = await r.json();
   if (d.ok) {
     const cal = d.calibration;
-    clicks = [cal.line_a_y, cal.line_b_y];
+    trackPts = cal.points;
+    rebuildSegInputs();
+    // Restore saved distances
+    cal.distances.forEach((dist, i) => {
+      const inp = document.getElementById('seg-dist-' + i);
+      if (inp) inp.value = dist;
+    });
     redrawCal();
     updateCalState();
     document.getElementById('cal-status').textContent =
-      `Loaded saved calibration — A: ${cal.line_a_y.toFixed(0)}px, B: ${cal.line_b_y.toFixed(0)}px, ${cal.distance_m}m`;
+      `Loaded — ${trackPts.length} points, segments: ${cal.distances.map(d=>d+'m').join(', ')}`;
     document.getElementById('btn-save-cal').disabled = false;
     document.getElementById('btn-start').disabled = false;
-    toast('Saved calibration loaded');
+    toast('Saved track loaded');
   }
 }
 

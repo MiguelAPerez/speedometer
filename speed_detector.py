@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
+import select
 import sys
 import time
 from datetime import datetime
@@ -34,11 +34,11 @@ from typing import List, Optional
 import cv2
 import numpy as np
 
-from speedcam.core import VideoSource, load_calibration, save_calibration
+from speedcam.core import VideoSource, load_calibration, save_calibration, clear_calibration, is_live_camera
 from speedcam.detector import Detector
 from speedcam.tracker import CentroidTracker
 from speedcam.speed import SpeedEstimator, SpeedRecord
-from speedcam.overlay import draw_tracks, draw_calibration_lines, draw_hud
+from speedcam.overlay import draw_tracks, draw_track, draw_hud
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ CSV_COLUMNS = [
 
 
 def _open_csv(path: str):
-    """Open (or append to) detections.csv and return (file_handle, writer)."""
+    """Open (or append to) a CSV file and return (file_handle, writer)."""
     exists = Path(path).exists()
     fh = open(path, "a", newline="")
     writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
@@ -74,84 +74,108 @@ def _write_row(writer, track, record: SpeedRecord) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Calibration UI (OpenCV mouse callback)
+# Calibration UI (OpenCV window + terminal prompts)
 # ---------------------------------------------------------------------------
 
 def run_calibration_ui(frame: np.ndarray, source) -> Optional[dict]:
     """
-    Show the first frame in an OpenCV window.  User clicks twice to set
-    Line A and Line B (y-coordinates only), then enters the real-world
-    distance in metres via the terminal.
+    Multi-segment track calibration UI.
 
-    Returns a calibration dict or None if the user cancelled.
+    Click nodes A, B, C … on the OpenCV preview window.  After each new node
+    (beyond the first) you'll be prompted in the terminal to enter the
+    real-world distance for that segment.  Blank input undoes the last node.
+    When you have ≥ 2 nodes, press Enter (empty line) in the terminal to
+    finish.  Press ESC in the window to cancel at any time.
+
+    Returns {points, distances, frame_w, frame_h} or None on cancel.
     """
     clone = frame.copy()
     h, w = clone.shape[:2]
-    clicks: List[int] = []  # y-coordinates
-
+    pts: List[dict] = []        # {"x": float, "y": float}
+    distances: List[float] = []
+    done = [False]
+    cancelled = [False]
     FONT = cv2.FONT_HERSHEY_SIMPLEX
+    WIN = "Calibration — speedcam"
 
     def _redraw():
         img = clone.copy()
-        instructions = [
-            "Click to set Line A (top reference)",
-            "Click to set Line B (bottom reference)",
-        ]
-        msg_idx = min(len(clicks), 1)
-        if len(clicks) < 2:
-            cv2.putText(img, instructions[msg_idx], (10, 30), FONT, 0.7, (0, 255, 200), 2)
-        for i, y in enumerate(clicks):
-            colour = (0, 255, 180) if i == 0 else (0, 140, 255)
-            label = "A" if i == 0 else "B"
-            cv2.line(img, (0, y), (w, y), colour, 2)
-            cv2.putText(img, label, (10, y - 8), FONT, 0.65, colour, 2)
-        if len(clicks) == 2:
-            cv2.putText(img, "Lines set. Enter distance in terminal.", (10, 30), FONT, 0.65, (255, 255, 100), 2)
-        cv2.imshow("Calibration — speedcam", img)
+        draw_track(img, pts, distances)
+        n = len(pts)
+        if n == 0:
+            msg = "Click to place node A"
+        elif n == 1:
+            msg = "Click node B — then enter distance in terminal"
+        else:
+            msg = f"{n} nodes placed  |  click for more  |  blank Enter = finish"
+        cv2.putText(img, msg, (10, 30), FONT, 0.60, (0, 255, 200), 2, cv2.LINE_AA)
+        cv2.putText(img, "ESC = cancel", (10, h - 12), FONT, 0.46, (180, 180, 180), 1, cv2.LINE_AA)
+        cv2.imshow(WIN, img)
 
-    def _on_mouse(event, x, y, flags, param):
-        if event == cv2.EVENT_LBUTTONDOWN and len(clicks) < 2:
-            clicks.append(y)
-            _redraw()
+    def _mouse_cb(event, x, y, flags, param):
+        if event != cv2.EVENT_LBUTTONDOWN or done[0] or cancelled[0]:
+            return
+        pts.append({"x": float(x), "y": float(y)})
+        _redraw()
+        if len(pts) < 2:
+            return
+        seg = len(pts) - 1
+        lp = chr(64 + seg)   # A, B, C …
+        lc = chr(65 + seg)   # B, C, D …
+        print(f"\n[Cal] Segment {lp}→{lc} placed.")
+        while True:
+            raw = input(f"  Distance {lp}→{lc} in metres (blank = undo node): ").strip()
+            if raw == "":
+                pts.pop()
+                _redraw()
+                print("  Node removed.")
+                return
+            try:
+                d = float(raw)
+                if d <= 0:
+                    raise ValueError
+                distances.append(d)
+                print(f"  Saved {d} m.  Click next node or press Enter (blank) to finish.")
+                _redraw()
+                return
+            except ValueError:
+                print("  Please enter a positive number (e.g. 8.5)")
 
-    cv2.namedWindow("Calibration — speedcam", cv2.WINDOW_NORMAL)
-    cv2.setMouseCallback("Calibration — speedcam", _on_mouse)
+    cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
+    cv2.setMouseCallback(WIN, _mouse_cb)
     _redraw()
 
-    print("\n[Calibration] Click Line A on the preview window, then Line B.")
-    print("Press ESC to cancel.\n")
+    print("\n[Calibration] Multi-segment track drawer")
+    print("  Click nodes A, B, C … on the window.")
+    print("  Enter each segment's real-world length when prompted.")
+    print("  Press Enter (blank) in the terminal when finished (≥ 2 nodes).")
+    print("  Press ESC in the window to cancel.\n")
 
-    while True:
-        key = cv2.waitKey(50) & 0xFF
-        if key == 27:  # ESC
-            cv2.destroyWindow("Calibration — speedcam")
-            return None
-        if len(clicks) == 2:
+    while not done[0] and not cancelled[0]:
+        cv2.setWindowTitle(WIN, f"Calibration — {len(pts)} node(s) placed")
+        key = cv2.waitKey(150) & 0xFF
+        if key == 27:
+            cancelled[0] = True
             break
 
-    cv2.destroyWindow("Calibration — speedcam")
+        # Non-blocking check for an empty Enter on stdin (the "done" signal)
+        r, _, _ = select.select([sys.stdin], [], [], 0)
+        if r:
+            line = sys.stdin.readline().strip()
+            if line == "" and len(pts) >= 2:
+                done[0] = True
 
-    # Get distance from terminal
-    while True:
-        raw = input("Enter real-world distance between the two lines (metres): ").strip()
-        try:
-            distance_m = float(raw)
-            if distance_m <= 0:
-                raise ValueError
-            break
-        except ValueError:
-            print("  Please enter a positive number (e.g. 10.0)")
+    cv2.destroyWindow(WIN)
 
-    calib = {
-        "line_a_y": float(clicks[0]),
-        "line_b_y": float(clicks[1]),
-        "distance_m": distance_m,
-        "frame_w": w,
-        "frame_h": h,
-    }
-    save_calibration(source, **{k: v for k, v in calib.items()})
-    print(f"[Calibration] Saved — Line A y={clicks[0]}px, Line B y={clicks[1]}px, {distance_m}m\n")
-    return calib
+    if cancelled[0] or len(pts) < 2:
+        if len(pts) < 2 and not cancelled[0]:
+            print("[Cal] Need at least 2 nodes — calibration cancelled.")
+        return None
+
+    save_calibration(source, points=pts, distances=distances, frame_w=w, frame_h=h)
+    labels = "".join(chr(65 + i) for i in range(len(pts)))
+    print(f"[Calibration] Saved track {labels} ({len(distances)} segment(s)).\n")
+    return {"points": pts, "distances": distances, "frame_w": w, "frame_h": h}
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +184,6 @@ def run_calibration_ui(frame: np.ndarray, source) -> Optional[dict]:
 
 def run(args: argparse.Namespace) -> None:
     source = args.source
-    # Coerce numeric string to int so VideoCapture treats it as a device index
     if isinstance(source, str) and source.isdigit():
         source = int(source)
 
@@ -170,11 +193,15 @@ def run(args: argparse.Namespace) -> None:
     print(f"[speedcam] Frame size: {w}×{h}  FPS: {vs.fps:.1f}")
 
     # ---- Calibration ----
+    # For video files and streams, always start fresh — clear any stale entry.
+    if not is_live_camera(source):
+        clear_calibration(source)
+
     calib = None
-    if not args.calibrate:
+    if not args.calibrate and is_live_camera(source):
         calib = load_calibration(source, w, h)
         if calib:
-            print(f"[speedcam] Loaded saved calibration for this source.")
+            print("[speedcam] Loaded saved calibration for webcam.")
 
     if calib is None:
         first_frame = vs.grab_single_frame()
@@ -188,14 +215,13 @@ def run(args: argparse.Namespace) -> None:
             vs.release()
             sys.exit(0)
 
-    line_a_y = calib["line_a_y"]
-    line_b_y = calib["line_b_y"]
-    distance_m = calib["distance_m"]
+    cal_points   = calib["points"]
+    cal_distances = calib["distances"]
 
     # ---- Pipeline ----
-    detector = Detector(conf_threshold=args.conf)
-    tracker = CentroidTracker(max_distance=args.max_distance, max_missing=args.max_missing)
-    estimator = SpeedEstimator.from_calibration(line_a_y, line_b_y, distance_m)
+    detector  = Detector(conf_threshold=args.conf)
+    tracker   = CentroidTracker(max_distance=args.max_distance, max_missing=args.max_missing)
+    estimator = SpeedEstimator.from_track(cal_points, cal_distances)
 
     # ---- Output files ----
     csv_fh, csv_writer = _open_csv("detections.csv")
@@ -226,16 +252,15 @@ def run(args: argparse.Namespace) -> None:
 
             frame_idx += 1
 
-            # Run detection only every `skip` frames; tracker still gets updated
             if frame_idx % skip == 0:
                 detections = detector.detect(frame)
             else:
                 detections = []
 
-            tracks = tracker.update(detections)
+            tracks       = tracker.update(detections)
             speed_records = estimator.update(tracks, frame_ts=frame_ts)
 
-            # Log new records to CSV
+            # Log first speed reading per track to CSV
             for tid, record in speed_records.items():
                 if tid not in logged_ids:
                     track = tracks.get(tid)
@@ -247,10 +272,10 @@ def run(args: argparse.Namespace) -> None:
                         speeds_seen.append(speed_val)
 
             # Annotate frame
-            draw_calibration_lines(frame, line_a_y, line_b_y)
+            draw_track(frame, cal_points, cal_distances)
             draw_tracks(frame, tracks, speed_records, units=args.units)
             last_spd = speeds_seen[-1] if speeds_seen else None
-            avg_spd = sum(speeds_seen) / len(speeds_seen) if speeds_seen else None
+            avg_spd  = sum(speeds_seen) / len(speeds_seen) if speeds_seen else None
             draw_hud(frame, last_spd, avg_spd, len(logged_ids), units=args.units)
 
             if writer_out:
@@ -303,7 +328,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="YOLO detection confidence threshold")
     p.add_argument("--max-distance", type=float, default=80.0,
                    help="Max pixel distance for centroid tracker matching")
-    p.add_argument("--max-missing", type=int, default=5,
+    p.add_argument("--max-missing", type=int, default=25,
                    help="Frames a track can disappear before being dropped")
     p.add_argument("--skip-frames", type=int, default=1,
                    help="Run YOLO inference every N frames (tracker runs every frame)")
