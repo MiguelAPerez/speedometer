@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import time
 from datetime import datetime
 
@@ -12,6 +13,53 @@ from speedcam.pipeline import build_detector, build_tracker
 from speedcam.speed import SpeedEstimator
 
 from .state import _lock, _state
+
+
+def _crop_thumbnail(frame: np.ndarray, track) -> str | None:
+    """Return a base64 JPEG data-URL of the vehicle's bounding box crop, or None."""
+    try:
+        x1, y1, x2, y2 = (int(v) for v in track.bbox)
+        h, w = frame.shape[:2]
+        pad_x = max(1, int((x2 - x1) * 0.10))
+        pad_y = max(1, int((y2 - y1) * 0.10))
+        x1 = max(0, x1 - pad_x)
+        y1 = max(0, y1 - pad_y)
+        x2 = min(w, x2 + pad_x)
+        y2 = min(h, y2 + pad_y)
+        crop = frame[y1:y2, x1:x2]
+        if crop.size == 0:
+            return None
+        # Resize to max 160×120 maintaining aspect ratio
+        ch, cw = crop.shape[:2]
+        scale = min(160 / cw, 120 / ch, 1.0)
+        if scale < 1.0:
+            crop = cv2.resize(crop, (int(cw * scale), int(ch * scale)), interpolation=cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 55])
+        if not ok:
+            return None
+        b64 = base64.b64encode(buf.tobytes()).decode("ascii")
+        return f"data:image/jpeg;base64,{b64}"
+    except Exception:
+        return None
+
+
+def _flush_pending_tracks(units: str) -> None:
+    """Log any tracks still in peak_speeds (e.g. car visible at end of video)."""
+    for tid, p in list(_state["peak_speeds"].items()):
+        if tid not in _state["logged_ids"]:
+            _state["logged_ids"].add(tid)
+            spds = p["speeds"]
+            avg = round(sum(spds) / len(spds), 1) if spds else p["top"]
+            _state["detections"].append({
+                "time": p["time"],
+                "id": tid,
+                "type": p["type"],
+                f"top_speed_{units}": round(p["top"], 1),
+                f"avg_speed_{units}": avg,
+                "direction": p["direction"],
+                "thumbnail": p["thumbnail"],
+            })
+    _state["peak_speeds"].clear()
 
 
 def run_pipeline(source, calibration: dict, units: str) -> None:
@@ -65,22 +113,54 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
                     for tid, rec in records.items():
                         spd = rec.speed_mph if units == "mph" else rec.speed_kph
 
-                        # Log to detection table once per car, but only once
-                        # the car is actually moving — avoids logging 0 mph for
-                        # cars that start stationary then drive away.
+                        # Track peak speed per vehicle; defer logging until
+                        # the track leaves the scene so we record the real speed
+                        # rather than the low warmup value from the first few frames.
                         if spd > 0 and tid not in _state["logged_ids"]:
-                            _state["logged_ids"].add(tid)
                             trk = tracks.get(tid)
-                            _state["detections"].append({
-                                "time": datetime.now().strftime("%H:%M:%S"),
-                                "id": tid,
-                                "type": trk.label if trk else "vehicle",
-                                f"speed_{units}": round(spd, 1),
-                                "direction": rec.direction,
-                            })
+                            existing = _state["peak_speeds"].get(tid)
+                            if existing is None:
+                                thumb = _crop_thumbnail(frame, trk) if trk else None
+                                _state["peak_speeds"][tid] = {
+                                    "top": spd,
+                                    "speeds": [spd],
+                                    "time": datetime.now().strftime("%H:%M:%S"),
+                                    "type": trk.label if trk else "vehicle",
+                                    "direction": rec.direction,
+                                    "thumbnail": thumb,
+                                }
+                            else:
+                                existing["speeds"].append(spd)
+                                if spd > existing["top"]:
+                                    existing["top"] = spd
+                                    existing["direction"] = rec.direction
+                                    thumb = _crop_thumbnail(frame, trk) if trk else None
+                                    if thumb:
+                                        existing["thumbnail"] = thumb
 
                         if spd > frame_max_spd:
                             frame_max_spd = spd
+
+                    # Flush tracks that just left the scene (in peak_speeds but
+                    # no longer in active tracks) — log with their peak speed.
+                    disappeared = [
+                        tid for tid in list(_state["peak_speeds"])
+                        if tid not in tracks and tid not in _state["logged_ids"]
+                    ]
+                    for tid in disappeared:
+                        _state["logged_ids"].add(tid)
+                        p = _state["peak_speeds"].pop(tid)
+                        spds = p["speeds"]
+                        avg = round(sum(spds) / len(spds), 1) if spds else p["top"]
+                        _state["detections"].append({
+                            "time": p["time"],
+                            "id": tid,
+                            "type": p["type"],
+                            f"top_speed_{units}": round(p["top"], 1),
+                            f"avg_speed_{units}": avg,
+                            "direction": p["direction"],
+                            "thumbnail": p["thumbnail"],
+                        })
 
                     # Keep speeds_seen as a rolling buffer of per-frame max speeds
                     # so Last/Avg KPIs always reflect the current state.
@@ -92,7 +172,9 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
                     spds = _state["speeds_seen"]
                     last_spd = spds[-1] if spds else None
                     avg_spd = sum(spds) / len(spds) if spds else None
-                    count = len(_state["logged_ids"])
+                    # Include pending (not-yet-logged) tracks in the count so the
+                    # vehicles KPI ticks up while a car is still on screen.
+                    count = len(_state["logged_ids"]) + len(_state["peak_speeds"])
 
                 draw_track(frame, cal_points, cal_distances)
                 draw_tracks(frame, tracks, records, units=units)
@@ -109,6 +191,7 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
         finally:
             vs.release()
             with _lock:
+                _flush_pending_tracks(units)
                 _state["running"] = False
 
     except Exception as e:

@@ -13,6 +13,7 @@ _state: dict = {
     "detections": [],
     "speeds_seen": [],
     "logged_ids": set(),
+    "peak_speeds": {},        # {track_id: {spd, time, type, direction, thumbnail}}
     "last_frame": None,       # latest annotated BGR frame (numpy array)
     "preview_frame": None,    # first frame for calibration preview
     "tmp_video_path": None,   # path to uploaded video temp file
@@ -28,4 +29,5 @@ def reset_stats() -> None:
         _state["detections"] = []
         _state["speeds_seen"] = []
         _state["logged_ids"] = set()
+        _state["peak_speeds"] = {}
         _state["error"] = None

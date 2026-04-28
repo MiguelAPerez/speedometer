@@ -1,6 +1,6 @@
 # speedcam
 
-Vehicle speed detection using YOLOv8-nano + centroid tracking.  
+Vehicle speed detection using YOLO + centroid tracking.  
 Run as a CLI tool or open the Streamlit web UI.
 
 ---
@@ -11,7 +11,7 @@ Run as a CLI tool or open the Streamlit web UI.
 pip install -r requirements.txt
 ```
 
-The first run will automatically download the YOLOv8-nano weights (~6 MB).
+The first run will automatically download the YOLO weights.
 
 ---
 
@@ -98,7 +98,7 @@ The two reference lines are a **scale ruler** painted onto the scene — they te
 speedcam/
 ├── __init__.py
 ├── core.py        # VideoSource, calibration I/O
-├── detector.py    # YOLOv8-nano wrapper
+├── detector.py    # YOLO wrapper
 ├── tracker.py     # Centroid nearest-neighbour tracker
 ├── speed.py       # Per-frame displacement speed estimator
 └── overlay.py     # Frame annotation helpers

@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>speedcam</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.css" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.js" crossorigin=""></script>
+<link rel="stylesheet" href="/static/leaflet/leaflet.min.css">
+<script src="/static/leaflet/leaflet.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -631,17 +631,22 @@ function renderTable(rows, units) {
     wrap.innerHTML = '<p style="padding:12px;color:var(--muted)">No detections yet.</p>';
     return;
   }
-  const sc = `speed_${units}`;
   let html = `<table><thead><tr>
-    <th>Time</th><th>ID</th><th>Type</th><th>Speed (${units})</th><th>Dir</th>
+    <th>Image</th><th>Time</th><th>ID</th><th>Type</th><th>Avg (${units})</th><th>Top (${units})</th><th>Dir</th>
   </tr></thead><tbody>`;
   [...rows].reverse().forEach(row => {
-    const spd = row[sc] ?? null;
+    const avg = row[`avg_speed_${units}`] ?? null;
+    const top = row[`top_speed_${units}`] ?? null;
+    const thumb = row.thumbnail
+      ? `<img src="${row.thumbnail}" style="height:48px;width:auto;border-radius:4px;object-fit:cover;display:block;">`
+      : '<span style="color:var(--muted)">—</span>';
     html += `<tr>
+      <td>${thumb}</td>
       <td>${row.time}</td>
       <td><span class="pill">#${row.id}</span></td>
       <td><span class="pill tag-info">${row.type}</span></td>
-      <td><span class="speed-badge ${speedClass(spd, units)}">${spd ?? '—'}</span></td>
+      <td><span class="speed-badge ${speedClass(avg, units)}">${avg ?? '—'}</span></td>
+      <td><span class="speed-badge ${speedClass(top, units)}">${top ?? '—'}</span></td>
       <td>${row.direction}</td>
     </tr>`;
   });
@@ -659,15 +664,14 @@ let _map, _tileLayer, _isSatellite = false;
 let _segPts = [], _segLine = null, _segMarkers = [], _detMarkers = [];
 let _nomLastCall = 0;
 
-requestAnimationFrame(() => {
-  _map = L.map('map-container', { center: [39.8283, -98.5795], zoom: 4 });
-  _tileLayer = L.tileLayer(OSM_URL, {
-    attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
-    maxZoom: 19,
-  }).addTo(_map);
-  _map.on('click', _onMapClick);
-  _loadMapState();
-});
+_map = L.map('map-container', { center: [39.8283, -98.5795], zoom: 4 });
+_tileLayer = L.tileLayer(OSM_URL, {
+  attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+  maxZoom: 19,
+}).addTo(_map);
+_map.on('click', _onMapClick);
+requestAnimationFrame(() => { _map.invalidateSize(); });
+_loadMapState();
 
 async function _nominatimSearch(q) {
   const elapsed = Date.now() - _nomLastCall;
@@ -736,12 +740,23 @@ async function _doSearch() {
   const btn = document.getElementById('btn-map-search');
   btn.disabled = true; btn.textContent = '…';
   try {
+    // Detect raw coordinate input like "41.110143, -73.951041" and skip Nominatim
+    const coordMatch = q.match(/^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lng = parseFloat(coordMatch[2]);
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        _map.setView([lat, lng], 16);
+        toast(`📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+        return;
+      }
+    }
     const res = await _nominatimSearch(q);
-    if (!res.length) { toast('Location not found', true); return; }
+    if (!Array.isArray(res) || !res.length) { toast('Location not found', true); return; }
     _map.setView([parseFloat(res[0].lat), parseFloat(res[0].lon)], 16);
     toast('📍 ' + res[0].display_name.split(',')[0]);
   } catch (err) {
-    toast('Search error: ' + err.message, true);
+    toast('Search error: ' + (err?.message ?? String(err)), true);
   } finally {
     btn.disabled = false; btn.textContent = '🔍 Search';
   }
