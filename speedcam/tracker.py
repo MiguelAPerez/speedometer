@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from .detector import Detection
+from .detector import Detection, VEHICLE_LABELS
 
 
 @dataclass
@@ -27,6 +27,10 @@ class Track:
     conf: float
     missing_frames: int = 0
     history: List[Tuple[float, float]] = field(default_factory=list)  # centroid history
+
+    @property
+    def label(self) -> str:
+        return VEHICLE_LABELS.get(self.cls, "vehicle")
 
 
 class CentroidTracker:

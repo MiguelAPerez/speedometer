@@ -82,8 +82,9 @@ def draw_tracks(
         record = speed_records.get(tid)
         if record:
             spd = record.speed_mph if units == "mph" else record.speed_kph
-            unit_str = units
-            label = f"#{tid} {spd:.1f} {unit_str} {record.direction}"
+            # ASCII direction — OpenCV's font can't render unicode arrows
+            direction = ">>" if record.direction == "→" else "<<"
+            label = f"#{tid} {spd:.1f} {units} {direction}"
         else:
             label = f"#{tid} {track.label}"
 
@@ -96,22 +97,38 @@ def draw_tracks(
     return frame
 
 
-def draw_calibration_lines(
+def draw_calibration_markers(
     frame: np.ndarray,
     line_a_y: Optional[float],
     line_b_y: Optional[float],
 ) -> np.ndarray:
-    """Draw the two horizontal calibration reference lines."""
+    """Draw small dot+crosshair markers for the two calibration reference levels."""
     h, w = frame.shape[:2]
-    if line_a_y is not None:
-        y = int(line_a_y)
-        cv2.line(frame, (0, y), (w, y), LINE_A_COLOUR, 2, cv2.LINE_AA)
-        cv2.putText(frame, "A", (8, y - 6), FONT, 0.55, LINE_A_COLOUR, 1, cv2.LINE_AA)
-    if line_b_y is not None:
-        y = int(line_b_y)
-        cv2.line(frame, (0, y), (w, y), LINE_B_COLOUR, 2, cv2.LINE_AA)
-        cv2.putText(frame, "B", (8, y - 6), FONT, 0.55, LINE_B_COLOUR, 1, cv2.LINE_AA)
+    margin = 24  # pixels from left edge
+
+    for y_val, colour, label in [
+        (line_a_y, LINE_A_COLOUR, "A"),
+        (line_b_y, LINE_B_COLOUR, "B"),
+    ]:
+        if y_val is None:
+            continue
+        y = int(y_val)
+        cx = margin
+
+        # Outer ring
+        cv2.circle(frame, (cx, y), 10, colour, 2, cv2.LINE_AA)
+        # Filled centre dot
+        cv2.circle(frame, (cx, y), 3, colour, -1, cv2.LINE_AA)
+        # Short horizontal tick extending right
+        cv2.line(frame, (cx + 10, y), (cx + 22, y), colour, 2, cv2.LINE_AA)
+        # Label
+        cv2.putText(frame, label, (cx + 26, y + 5), FONT, 0.55, colour, 1, cv2.LINE_AA)
+
     return frame
+
+
+# Keep old name as alias so any direct callers don't break
+draw_calibration_lines = draw_calibration_markers
 
 
 def draw_hud(

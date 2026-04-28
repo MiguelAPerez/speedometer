@@ -64,7 +64,7 @@ Detections are appended to `detections.csv` with columns:
 python app.py
 ```
 
-Then open `http://localhost:5000` in your browser.
+Then open `http://localhost:8080` in your browser.
 
 Nothing is written outside the project folder — no global config, no telemetry.
 

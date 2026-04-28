@@ -66,10 +66,12 @@ class SpeedEstimator:
         meters_per_pixel: float,
         window: int = 15,
         min_samples: int = 3,
+        min_speed_mph: float = 2.0,
     ):
         self._mpp = meters_per_pixel
         self._window = window
         self._min_samples = min_samples
+        self._min_speed_mps = min_speed_mph / self.MPS_TO_MPH
         self._states: Dict[int, _TrackState] = {}
         self._logged: Dict[int, SpeedRecord] = {}  # last confirmed record per track
 
@@ -131,6 +133,11 @@ class SpeedEstimator:
                 avg_mps = sum(speeds) / len(speeds)
                 avg_dx = sum(dxs) / len(dxs)
                 direction = "→" if avg_dx >= 0 else "←"
+
+                # Clamp to zero below the minimum threshold — suppresses
+                # centroid jitter on parked / slow-moving vehicles
+                if avg_mps < self._min_speed_mps:
+                    avg_mps = 0.0
 
                 record = SpeedRecord(
                     track_id=tid,
