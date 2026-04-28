@@ -471,6 +471,7 @@ async function _startPipeline() {
   });
   const d = await r.json();
   if (!d.ok) { toast(d.error || 'Start failed', true); return; }
+  schedulePoll(500);
   _isLive = true;
   ctx.clearRect(0, 0, calCanvas.width, calCanvas.height);
   calImg.src = '/video_feed?' + Date.now();
@@ -574,6 +575,12 @@ const btnCsv     = document.getElementById('btn-csv');
 
 let lastCount = 0;
 let _lastDetections = [], _lastUnits = 'mph';
+let _pollTimer = null;
+
+function schedulePoll(delay) {
+  clearTimeout(_pollTimer);
+  _pollTimer = setTimeout(pollStats, delay);
+}
 
 async function pollStats() {
   try {
@@ -583,12 +590,15 @@ async function pollStats() {
     if (d.running) {
       statusDot.className = 'live'; statusTxt.textContent = 'Live';
       btnStop.disabled = false; btnStart.disabled = true;
+      schedulePoll(800);
     } else if (d.error) {
       statusDot.className = 'error'; statusTxt.textContent = 'Error';
       btnStop.disabled = true; btnStart.disabled = false;
+      schedulePoll(5000);
     } else {
       statusDot.className = ''; statusTxt.textContent = 'Idle';
       btnStop.disabled = true; btnStart.disabled = false;
+      // idle/finished — stop polling until user starts again
     }
     errEl.textContent = d.error || '';
 
@@ -612,7 +622,7 @@ async function pollStats() {
       lastCount = d.count;
       renderTable(d.detections, d.units);
     }
-  } catch(e) { /* server not yet up */ }
+  } catch(e) { schedulePoll(2000); }
 }
 
 function renderTable(rows, units) {
@@ -639,7 +649,6 @@ function renderTable(rows, units) {
   wrap.innerHTML = html;
 }
 
-setInterval(pollStats, 800);
 pollStats();
 
 // ── Map ───────────────────────────────────────────────────────────────────
