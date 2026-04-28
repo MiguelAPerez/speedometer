@@ -52,6 +52,13 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
                 dets = detector.detect(frame)
                 tracks = tracker.update(dets, frame=frame)
                 records = estimator.update(tracks, frame_ts=t_frame_start)
+                # Show last-known speed for tracks still warming up (< min_samples)
+                # so resurrected or newly appeared cars don't flash "car" label
+                for tid in tracks:
+                    if tid not in records:
+                        prior = estimator.get_record(tid)
+                        if prior:
+                            records[tid] = prior
 
                 with _lock:
                     for tid, rec in records.items():

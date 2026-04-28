@@ -472,6 +472,7 @@ async function _startPipeline() {
   const d = await r.json();
   if (!d.ok) { toast(d.error || 'Start failed', true); return; }
   _isLive = true;
+  ctx.clearRect(0, 0, calCanvas.width, calCanvas.height);
   calImg.src = '/video_feed?' + Date.now();
   calCanvas.classList.add('no-interact');
   document.getElementById('cal-hint').classList.add('hidden');
