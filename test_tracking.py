@@ -8,7 +8,7 @@ track comes back, and shows a summary at the end.
 
 Usage:
     python3 test_tracking.py <video_path>
-    python3 test_tracking.py <video_path> --model yolov8n.pt  # fallback to nano
+    python3 test_tracking.py <video_path> --model yolov8n.pt  # override model
     python3 test_tracking.py <video_path> --no-display        # headless, prints summary only
 """
 
@@ -22,8 +22,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from speedcam.detector import Detector
-from speedcam.tracker import CentroidTracker
+from speedcam.detector import DEFAULT_MODEL
+from speedcam.pipeline import build_detector, build_tracker
 
 
 # Distinct BGR colors for up to 20 concurrent track IDs
@@ -44,9 +44,9 @@ def _color(track_id: int) -> tuple:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("source", help="Path to video file")
-    ap.add_argument("--model", default="yolo11s.pt",
-                    help="YOLO model weights (default: yolo11s.pt)")
-    ap.add_argument("--conf", type=float, default=0.35,
+    ap.add_argument("--model", default=DEFAULT_MODEL,
+                    help=f"YOLO model weights (default: {DEFAULT_MODEL})")
+    ap.add_argument("--conf", type=float, default=0.40,
                     help="Detection confidence threshold")
     ap.add_argument("--max-missing", type=int, default=25,
                     help="Frames before a track moves to graveyard")
@@ -66,8 +66,8 @@ def main() -> None:
         sys.exit(1)
 
     print(f"[test] Loading model: {args.model}")
-    detector = Detector(model_path=args.model, conf_threshold=args.conf)
-    tracker = CentroidTracker(
+    detector = build_detector(model_path=args.model, conf_threshold=args.conf)
+    tracker = build_tracker(
         max_missing=args.max_missing,
         graveyard_max_frames=args.graveyard_frames,
     )
