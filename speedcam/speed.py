@@ -146,13 +146,15 @@ class SpeedEstimator:
                     # Use scale at the car's current y-position
                     speed_mps = (displacement_px * self._mpp_at(cy)) / dt
 
-                    # Spike rejection — if this single sample is more than 3×
-                    # the current rolling average, it's almost certainly a
-                    # false reading caused by a track re-assignment or
-                    # detector hiccup.  Discard it.
+                    # Spike rejection — discard readings that are more than 3×
+                    # the rolling average, but only when the baseline is already
+                    # above the minimum speed threshold.  Skipping rejection near
+                    # zero prevents the window from blocking a car that starts
+                    # stationary and then accelerates (every fast reading would
+                    # be "> 3× ~0" and get dropped indefinitely).
                     if state.speed_window:
                         current_avg = sum(s for s, _ in state.speed_window) / len(state.speed_window)
-                        if current_avg > 0 and speed_mps > current_avg * 3.0:
+                        if current_avg > self._min_speed_mps and speed_mps > current_avg * 3.0:
                             state.last_centroid = (cx, cy)
                             state.last_ts = now
                             continue
