@@ -1,0 +1,51 @@
+name: Bump version
+
+on:
+  workflow_dispatch:
+    inputs:
+      increment:
+        description: "Version increment (auto = commitizen decides from commits)"
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # commitizen needs full history to determine next version
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install commitizen
+        run: pip install commitizen
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        run: |
+          if [ "${{ inputs.increment }}" = "auto" ]; then
+            cz bump --yes
+          else
+            cz bump --increment "${{ inputs.increment }}" --yes
+          fi
+
+      - name: Push commit and tag
+        run: git push --follow-tags
