@@ -1,110 +1,134 @@
-# speedcam
+# Speedometer
 
-Vehicle speed detection using YOLO + centroid tracking.  
-Run as a CLI tool or open the Streamlit web UI.
+Measure the speed of passing vehicles using any camera — no special hardware required.  
+Point a camera at a road, mark two reference points, and the app tracks vehicles in real time from your browser.
 
 ---
 
-## Setup
+## Download
 
+Grab the latest release for your platform:
+
+| Platform | Download |
+|----------|----------|
+| **Mac** | `Speedometer-vX.X.X-mac.dmg` |
+| **Windows** | `Speedometer-vX.X.X-windows-setup.exe` |
+| **Linux** | `Speedometer-vX.X.X-linux.tar.gz` |
+| **Self-host (Docker)** | See [Docker](#docker--self-hosting) below |
+
+[**→ All releases**](../../releases/latest)
+
+---
+
+## Installation
+
+### Mac
+1. Open the `.dmg` file
+2. Drag **Speedometer** into your Applications folder
+3. Double-click to launch — your browser opens automatically
+
+> First launch may take 30–60 seconds while the AI model loads.
+
+### Windows
+1. Run the `.exe` installer and follow the prompts
+2. Launch **Speedometer** from the desktop shortcut or Start Menu
+3. Your browser opens automatically to the app
+
+### Linux
+1. Extract the `.tar.gz` archive
+2. Run `./run.sh` inside the extracted folder
+3. Your browser opens automatically to the app
+
+---
+
+## How to use it
+
+### 1 — Choose a video source
+
+- **Upload a video** — drag in any `.mp4`, `.mov`, or `.avi` file
+- **Use your webcam** — click **Use Webcam** to grab a live frame
+
+### 2 — Calibrate the scene
+
+The app needs to know how large real-world distances are in your footage.
+
+1. Click **two points** on the road that are a known distance apart  
+   *(painted lines, lamp-post spacing, or a tape measure work well — aim for 8–15 m)*
+2. Enter the real-world distance between the points in metres
+3. Click **Save Calibration**
+
+Calibration is saved automatically — you only need to redo it if you move the camera.
+
+### 3 — Start detecting
+
+Click **Start**. Vehicles are highlighted with bounding boxes and their speeds appear live.  
+Switch between **mph** and **km/h** at any time.
+
+### 4 — Export results
+
+Click **Download CSV** to export a spreadsheet of all detections with timestamps, vehicle type, speed, and direction.
+
+---
+
+## Camera placement tips
+
+- **Height**: Mount 2–5 m above the road, angled slightly downward
+- **Angle**: Vehicles should travel roughly perpendicular to the camera for best accuracy
+- **Lighting**: Avoid heavy backlighting or overexposed frames
+- **Typical accuracy**: ±2–3 mph at 30–60 mph in good conditions
+
+---
+
+## Docker / Self-hosting
+
+Run Speedometer on a server or NAS and access it from any browser on your network.
+
+**Quick start:**
 ```bash
-pip install -r requirements.txt
+docker compose up
 ```
+Then open `http://your-server-ip:8080`.
 
-The first run will automatically download the YOLO weights.
-
----
-
-## CLI usage
-
+**Pull the image manually:**
 ```bash
-# Webcam (default), mph
-python speed_detector.py --source 0
-
-# Video file, km/h, force new calibration
-python speed_detector.py --source clip.mp4 --units kph --calibrate
-
-# RTSP stream, record annotated output
-python speed_detector.py --source rtsp://192.168.1.10:8554/cam --record
-
-# Run inference every 2nd frame (faster on slower hardware)
-python speed_detector.py --source 0 --skip-frames 2
+docker run -p 8080:8080 -v speedometer-data:/root/.speedcam \
+  ghcr.io/miguelaperez/speedometer:latest
 ```
 
-**Keyboard shortcuts (live window)**
-
-| Key | Action |
-|-----|--------|
-| `q` | Quit |
-| `r` | Reset stats (keeps calibration) |
-| `s` | Save screenshot |
-
-**All flags**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--source` | `0` | Webcam index, file path, or RTSP/HTTP URL |
-| `--calibrate` | off | Force recalibration |
-| `--units` | `mph` | `mph` or `kph` |
-| `--record` | off | Write annotated video to `output.mp4` |
-| `--conf` | `0.35` | YOLO detection confidence threshold |
-| `--max-distance` | `80` | Max pixel distance for tracker matching |
-| `--max-missing` | `5` | Frames before a track is dropped |
-| `--skip-frames` | `1` | Run YOLO every N frames |
-| `--source-fps` | auto | Override reported FPS (useful for RTSP) |
-
-Detections are appended to `detections.csv` with columns:  
-`timestamp, track_id, vehicle_type, speed_mph, speed_kph, direction, sample_count`
+Data (calibration, uploaded videos) is stored in the `speedometer-data` volume and persists across restarts.
 
 ---
 
-## Web UI (Flask)
+## Where data is stored
 
-```bash
-python app.py
-```
+All data lives in `~/.speedcam` on your machine (or the Docker volume):
 
-Then open `http://localhost:8080` in your browser.
+| File | Contents |
+|------|----------|
+| `calibration.json` | Your saved calibration points |
+| `speedometer.log` | Error log (only written on problems) |
+| `tmp/` | Temporary upload files (auto-cleaned) |
 
-Nothing is written outside the project folder — no global config, no telemetry.
-
----
-
-## Physical calibration
-
-The two reference lines are a **scale ruler** painted onto the scene — they tell the software how many pixels equal one metre.
-
-1. **Pick two reference points** in the road that are a known distance apart and roughly parallel to the camera's horizontal axis. Painted road markings, lamp-post spacing, or chalk marks work well. A span of 8–15 m gives good resolution.
-
-2. **Point the camera** so both reference points are clearly visible in the frame. Mount it above and to the side of the road so vehicles pass roughly perpendicular to the camera.
-
-3. **Open the calibration UI** (CLI: `--calibrate` flag; Streamlit: Step 1). Click the frame at the level of reference point A, then at the level of reference point B. Enter the real-world distance between them.
-
-4. **Calibration is saved** to `calibration.json` keyed by source (webcam index, file path, or URL). It's reused automatically on subsequent runs — you only need to recalibrate if you move the camera.
-
-**Tips for good accuracy**
-
-- Camera angle: mount as high as practical (2–5 m), angled slightly down. Steep angles compress the depth axis and reduce accuracy.
-- Avoid heavy backlight — overexposed frames reduce detection confidence.
-- For vehicles travelling at 30–60 mph in a typical residential or arterial setting, ±2–3 mph accuracy is realistic when the road is roughly perpendicular to the camera axis.
-- Speed is computed from frame-to-frame centroid displacement, so a consistent frame rate matters. Use `--skip-frames 1` (default) on hardware that can keep up, or increase to 2–3 on slower machines.
-- The plausibility filter in `speed.py` discards single-frame speed bursts — a rolling window of 3–15 frames is averaged per vehicle.
+Nothing is sent to the internet. No telemetry, no accounts.
 
 ---
 
-## Project structure
+## Troubleshooting
 
-```
-speedcam/
-├── __init__.py
-├── core.py        # VideoSource, calibration I/O
-├── detector.py    # YOLO wrapper
-├── tracker.py     # Centroid nearest-neighbour tracker
-├── speed.py       # Per-frame displacement speed estimator
-└── overlay.py     # Frame annotation helpers
-speed_detector.py  # CLI entry point
-app.py             # Streamlit UI
-requirements.txt
-calibration.json   # Written at runtime
-detections.csv     # Appended at runtime
-```
+**The app opens but the video feed is blank**  
+Check that your browser has camera permission if using the webcam. For uploaded videos, make sure the file isn't open in another app.
+
+**"Model loading" takes a long time on first launch**  
+The AI model (~18 MB) is set up on first run. Subsequent launches are fast.
+
+**Speeds look wrong**  
+Recalibrate — even a small change in camera position requires a new calibration. Ensure your two reference points are as far apart as possible for best accuracy.
+
+**Port 8080 is already in use**  
+The app automatically tries nearby ports. Check the launcher window for the actual URL.
+
+---
+
+## For developers
+
+See [docs/development.md](docs/development.md) for architecture, running from source, contributing, and CLI usage.

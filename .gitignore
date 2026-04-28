@@ -9,3 +9,10 @@ calibration.json
 calibrations.json
 yolo*.pt
 
+# Build artifacts
+dist/
+build/*.exe
+*.dmg
+*.tar.gz
+.eggs/
+*.egg-info/

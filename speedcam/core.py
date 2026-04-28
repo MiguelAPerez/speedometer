@@ -32,24 +32,38 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-CALIBRATION_FILE = Path("calibration.json")
+
+def get_data_dir() -> Path:
+    """User-writable directory for calibration.json and temp uploads.
+
+    Defaults to the current working directory. Set SPEEDCAM_DATA_DIR to
+    override — the packaged launcher points this at ~/.speedcam so calibration
+    is never written inside the read-only app bundle.
+    """
+    env = os.environ.get("SPEEDCAM_DATA_DIR")
+    return Path(env) if env else Path(".")
 
 
 # ---------------------------------------------------------------------------
 # Calibration helpers
 # ---------------------------------------------------------------------------
 
+def _cal_path() -> Path:
+    return get_data_dir() / "calibration.json"
+
+
 def _load_json() -> dict:
-    if CALIBRATION_FILE.exists():
+    path = _cal_path()
+    if path.exists():
         try:
-            return json.loads(CALIBRATION_FILE.read_text())
+            return json.loads(path.read_text())
         except (json.JSONDecodeError, OSError):
             return {}
     return {}
 
 
 def _save_json(data: dict) -> None:
-    CALIBRATION_FILE.write_text(json.dumps(data, indent=2))
+    _cal_path().write_text(json.dumps(data, indent=2))
 
 
 def source_key(source: str | int) -> str:

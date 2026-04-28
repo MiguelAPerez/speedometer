@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, render_template, request
 
-from speedcam.core import VideoSource, load_calibration, save_calibration, clear_calibration, is_live_camera
+from speedcam.core import VideoSource, load_calibration, save_calibration, clear_calibration, is_live_camera, get_data_dir
 
 from .pipeline import run_pipeline, mjpeg_stream, preview_jpeg
 from .state import _lock, _state, reset_stats
@@ -41,7 +41,7 @@ def upload():
     suffix = Path(f.filename).suffix or ".mp4"
     tmp = tempfile.NamedTemporaryFile(
         delete=False, suffix=suffix,
-        dir=Path(__file__).parents[2] / "tmp",
+        dir=get_data_dir() / "tmp",
     )
     tmp.write(f.read())
     tmp.close()

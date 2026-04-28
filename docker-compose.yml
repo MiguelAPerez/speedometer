@@ -1,0 +1,14 @@
+services:
+  speedometer:
+    image: ghcr.io/miguelaperez/speedometer:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - speedometer-data:/root/.speedcam
+    restart: unless-stopped
+    # Optional: pass a webcam device through to the container
+    # devices:
+    #   - /dev/video0:/dev/video0
+
+volumes:
+  speedometer-data:
