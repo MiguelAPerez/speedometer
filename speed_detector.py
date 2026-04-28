@@ -35,8 +35,7 @@ import cv2
 import numpy as np
 
 from speedcam.core import VideoSource, load_calibration, save_calibration, clear_calibration, is_live_camera
-from speedcam.detector import Detector
-from speedcam.tracker import CentroidTracker
+from speedcam.pipeline import build_detector, build_tracker
 from speedcam.speed import SpeedEstimator, SpeedRecord
 from speedcam.overlay import draw_tracks, draw_track, draw_hud
 
@@ -219,8 +218,8 @@ def run(args: argparse.Namespace) -> None:
     cal_distances = calib["distances"]
 
     # ---- Pipeline ----
-    detector  = Detector(model_path=args.model, conf_threshold=args.conf, min_area=args.min_area)
-    tracker   = CentroidTracker(
+    detector  = build_detector(model_path=args.model, conf_threshold=args.conf, min_area=args.min_area)
+    tracker   = build_tracker(
         max_distance=args.max_distance,
         max_missing=args.max_missing,
         graveyard_max_frames=args.graveyard_frames,

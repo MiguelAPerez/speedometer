@@ -25,10 +25,9 @@ import numpy as np
 from flask import Flask, Response, jsonify, render_template_string, request, send_file
 
 from speedcam.core import VideoSource, load_calibration, save_calibration, source_key, clear_calibration, is_live_camera
-from speedcam.detector import Detector
 from speedcam.overlay import draw_track, draw_hud, draw_tracks
+from speedcam.pipeline import build_detector, build_tracker
 from speedcam.speed import SpeedEstimator
-from speedcam.tracker import CentroidTracker
 
 app = Flask(__name__)
 
@@ -70,8 +69,8 @@ def _reset_stats():
 def _pipeline(source, calibration: dict, units: str):
     """Runs in a background thread — reads frames, detects, tracks, estimates speed."""
     try:
-        detector = Detector(model_path="yolo11s.pt")
-        tracker = CentroidTracker(graveyard_max_frames=150)
+        detector = build_detector()
+        tracker = build_tracker()
         estimator = SpeedEstimator.from_track(
             calibration["points"],
             calibration["distances"],
