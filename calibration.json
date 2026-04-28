@@ -1,0 +1,18 @@
+{
+  "webcam:0": {
+    "line_a_y": 200.0,
+    "line_b_y": 400.0,
+    "distance_m": 10.0,
+    "frame_w": 1280,
+    "frame_h": 720,
+    "created_at": "2026-04-28T01:46:49.083337+00:00"
+  },
+  "/Users/mperez/development/speedometer/tmp/tmp1q3r4epu.MP4": {
+    "line_a_y": 1268.9237425635479,
+    "line_b_y": 1455.8355868036776,
+    "distance_m": 10.0,
+    "frame_w": 2560,
+    "frame_h": 1920,
+    "created_at": "2026-04-28T02:08:35.901554+00:00"
+  }
+}
