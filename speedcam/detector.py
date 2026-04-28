@@ -12,6 +12,8 @@ from typing import List
 
 import numpy as np
 
+DEFAULT_MODEL = "yolo12s.pt"
+
 # COCO class IDs we care about
 VEHICLE_CLASSES = {2, 3, 5, 7}
 VEHICLE_LABELS = {2: "car", 3: "motorcycle", 5: "bus", 7: "truck"}
@@ -58,7 +60,7 @@ class Detector:
 
     def __init__(
         self,
-        model_path: str = "yolo11s.pt",
+        model_path: str = DEFAULT_MODEL,
         conf_threshold: float = 0.40,
         iou_threshold: float = 0.35,
         min_area: int = 0,

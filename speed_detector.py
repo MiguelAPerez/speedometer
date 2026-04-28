@@ -321,7 +321,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--source", default="0",
                    help="Video source: webcam index, file path, or RTSP/HTTP URL")
-    p.add_argument("--model", default="yolo11s.pt",
+    p.add_argument("--model", default="yolo12s.pt",
                    help="YOLO model weights (auto-downloaded if not present)")
     p.add_argument("--calibrate", action="store_true",
                    help="Force recalibration even if a saved calibration exists")

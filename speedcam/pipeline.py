@@ -7,12 +7,12 @@ can never silently diverge between the two entry points.
 
 from __future__ import annotations
 
-from .detector import Detector
+from .detector import Detector, DEFAULT_MODEL
 from .tracker import CentroidTracker
 
 
 def build_detector(
-    model_path: str = "yolo11s.pt",
+    model_path: str = DEFAULT_MODEL,
     conf_threshold: float = 0.40,
     iou_threshold: float = 0.35,
     min_area: int = 0,
