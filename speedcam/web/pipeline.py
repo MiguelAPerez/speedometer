@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import queue
+import threading
 import time
 from datetime import datetime
 
@@ -85,6 +87,32 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
         fps = vs.fps or 30.0
         frame_interval = 1.0 / fps
 
+        # Reader thread decodes the next frame while inference runs on the current
+        # one. Queue size 4 = ~133ms of buffer at 30fps; drop on full to stay live.
+        frame_q: queue.Queue = queue.Queue(maxsize=4)
+
+        def _reader() -> None:
+            try:
+                while True:
+                    with _lock:
+                        if not _state["running"]:
+                            break
+                    ok, frame = vs.read()
+                    if not ok:
+                        break
+                    try:
+                        frame_q.put_nowait(frame)
+                    except queue.Full:
+                        pass
+            finally:
+                try:
+                    frame_q.put(None, timeout=1)
+                except queue.Full:
+                    pass
+
+        reader_t = threading.Thread(target=_reader, daemon=True)
+        reader_t.start()
+
         try:
             while True:
                 t_frame_start = time.monotonic()
@@ -93,8 +121,11 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
                     if not _state["running"]:
                         break
 
-                ok, frame = vs.read()
-                if not ok:
+                try:
+                    frame = frame_q.get(timeout=2.0)
+                except queue.Empty:
+                    break
+                if frame is None:
                     break
 
                 dets = detector.detect(frame)
@@ -190,6 +221,7 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
 
         finally:
             vs.release()
+            reader_t.join(timeout=2.0)
             with _lock:
                 _flush_pending_tracks(units)
                 _state["running"] = False

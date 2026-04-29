@@ -7,12 +7,28 @@ Returns per-frame detections filtered to COCO vehicle classes:
 
 from __future__ import annotations
 
+import platform
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
 DEFAULT_MODEL = "yolo12s.pt"
+
+
+def _best_device() -> str:
+    """Return the best available inference device: cuda > mps > cpu."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if platform.system() == "Darwin":
+            mps = getattr(torch.backends, "mps", None)
+            if mps is not None and mps.is_available():
+                return "mps"
+    except Exception:
+        pass
+    return "cpu"
 
 # COCO class IDs we care about
 VEHICLE_CLASSES = {2, 3, 5, 7}
@@ -64,20 +80,31 @@ class Detector:
         conf_threshold: float = 0.40,
         iou_threshold: float = 0.35,
         min_area: int = 0,
+        device: Optional[str] = None,
+        imgsz: int = 640,
     ):
         from ultralytics import YOLO  # deferred so import errors surface clearly
 
-        self._model = YOLO(model_path)
         self._conf = conf_threshold
         self._iou = iou_threshold
         self._min_area = min_area
+        self._imgsz = imgsz
+        self._device = device if device is not None else _best_device()
+        # FP16 only on CUDA — MPS half support varies across PyTorch versions
+        self._half = self._device == "cuda"
+        self._model = YOLO(model_path)
+        self._model.to(self._device)
+        print(f"[detector] device={self._device}  half={self._half}  imgsz={self._imgsz}")
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
         """
         Run inference on a single BGR frame (as returned by cv2.VideoCapture).
         Returns a list of Detection objects for every vehicle found.
         """
-        results = self._model(frame, verbose=False, iou=self._iou)[0]
+        results = self._model(
+            frame, verbose=False, iou=self._iou,
+            half=self._half, imgsz=self._imgsz,
+        )[0]
         detections: List[Detection] = []
 
         for box in results.boxes:

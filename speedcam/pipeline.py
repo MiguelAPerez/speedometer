@@ -16,12 +16,16 @@ def build_detector(
     conf_threshold: float = 0.40,
     iou_threshold: float = 0.35,
     min_area: int = 0,
+    device: str = None,
+    imgsz: int = 640,
 ) -> Detector:
     return Detector(
         model_path=model_path,
         conf_threshold=conf_threshold,
         iou_threshold=iou_threshold,
         min_area=min_area,
+        device=device,
+        imgsz=imgsz,
     )
 
 

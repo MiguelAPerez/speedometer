@@ -269,6 +269,16 @@ class VideoSource:
         src = self._source if not isinstance(self._source, str) or not self._source.isdigit() \
               else int(self._source)
         self._cap = cv2.VideoCapture(src)
+        # Request hardware-accelerated decode when the platform supports it
+        # (NVDEC on NVIDIA, VideoToolbox on macOS, VAAPI on Linux).
+        # Silently ignored on builds or platforms where the property is absent.
+        _hw_prop = getattr(cv2, "CAP_PROP_HW_ACCELERATION", None)
+        _hw_any  = getattr(cv2, "VIDEO_ACCELERATION_ANY", None)
+        if _hw_prop is not None and _hw_any is not None:
+            try:
+                self._cap.set(_hw_prop, _hw_any)
+            except Exception:
+                pass
         if not self._cap.isOpened():
             raise RuntimeError(f"Could not open video source: {self._source!r}")
 
