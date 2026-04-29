@@ -153,9 +153,13 @@
     <div style="display:flex; gap:4px; align-items:center">
       <span style="font-size:11px; color:var(--muted)">Ch:</span>
       <input type="number" id="reo-ch" value="1" min="1" max="64" style="width:45px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r);padding:4px 6px;font-size:12px;">
+      <select id="reo-codec" style="flex:1; padding:4px 6px;">
+        <option value="h264">H.264</option>
+        <option value="h265">H.265 (4K)</option>
+      </select>
       <select id="reo-stream" style="flex:1; padding:4px 6px;">
-        <option value="main">Main (HD)</option>
-        <option value="sub">Sub (SD)</option>
+        <option value="main">Main</option>
+        <option value="sub">Sub</option>
       </select>
     </div>
   </div>
@@ -280,15 +284,16 @@ async function connectSource() {
     if (!source) { toast('Enter RTSP URL', true); return; }
   } else if (mode === 'reolink') {
     const ip = document.getElementById('reo-ip').value.trim();
-    const user = document.getElementById('reo-user').value.trim();
-    const pass = document.getElementById('reo-pass').value.trim();
+    const user = encodeURIComponent(document.getElementById('reo-user').value.trim());
+    const pass = encodeURIComponent(document.getElementById('reo-pass').value.trim());
     const ch = parseInt(document.getElementById('reo-ch').value) || 1;
+    const codec = document.getElementById('reo-codec').value;
     const stream = document.getElementById('reo-stream').value;
     if (!ip || !user || !pass) { toast('Enter IP, User, and Pass', true); return; }
-    // Reolink RTSP URL pattern: rtsp://user:pass@ip:554//h264Preview_0<channel>_<stream>
-    // Note: channel is 1-indexed in UI, but 0-padded in URL usually (01, 02...)
+    
+    // Standard Reolink RTSP URL pattern: rtsp://user:pass@ip:554/h264Preview_01_main
     const chStr = ch < 10 ? '0' + ch : ch;
-    source = `rtsp://${user}:${pass}@${ip}:554//h264Preview_${chStr}_${stream}`;
+    source = `rtsp://${user}:${pass}@${ip}:554/${codec}Preview_${chStr}_${stream}`;
   } else {
     return; // File mode handled separately by upload
   }
