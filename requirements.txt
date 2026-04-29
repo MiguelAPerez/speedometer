@@ -3,3 +3,4 @@ ultralytics>=8.2.0
 numpy>=1.26.0
 flask>=3.0.0
 pandas>=2.2.0
+pywebview>=4.0.0

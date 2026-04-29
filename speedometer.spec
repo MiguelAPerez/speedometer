@@ -11,6 +11,10 @@ block_cipher = None
 ul_datas = collect_data_files("ultralytics")
 ul_hidden = collect_submodules("ultralytics")
 
+# pywebview — collect all platform backends so the frozen app can import them
+wv_datas = collect_data_files("webview")
+wv_hidden = collect_submodules("webview")
+
 # Include model files only if they exist in the project root
 bundled_models = []
 for model in ("yolo12s.pt", "yolov8n.pt", "yolo11s.pt"):
@@ -25,8 +29,8 @@ a = Analysis(
         ("templates", "templates"),
         ("static", "static"),
         ("speedcam", "speedcam"),
-    ] + bundled_models + ul_datas,
-    hiddenimports=ul_hidden + [
+    ] + bundled_models + ul_datas + wv_datas,
+    hiddenimports=ul_hidden + wv_hidden + [
         "flask",
         "jinja2",
         "werkzeug",

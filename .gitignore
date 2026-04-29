@@ -16,3 +16,8 @@ build/*.exe
 *.tar.gz
 .eggs/
 *.egg-info/
+
+
+build/
+dist/
+.DS_Store

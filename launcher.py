@@ -13,14 +13,14 @@ import socket
 import sys
 import threading
 import time
-import webbrowser
 from pathlib import Path
 
 
 def _base_dir() -> Path:
-    """Directory containing this executable (or this script during dev)."""
+    """Directory containing bundled data files (or this script during dev)."""
     if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
+        # PyInstaller 6.x places all data in _internal/ (_MEIPASS points there)
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
     return Path(__file__).parent
 
 
@@ -97,17 +97,14 @@ def main() -> None:
     )
     server_thread.start()
 
-    # Give Flask a moment to bind before the browser hits it
+    # Give Flask a moment to bind before the webview loads it
     time.sleep(1.2)
-    webbrowser.open(url)
 
     print(f"Speedometer running at {url}")
-    print("Close this window to stop.")
 
-    try:
-        server_thread.join()
-    except KeyboardInterrupt:
-        pass
+    import webview
+    window = webview.create_window("Speedometer", url, width=1280, height=800, min_size=(800, 600))
+    webview.start()
 
 
 if __name__ == "__main__":
