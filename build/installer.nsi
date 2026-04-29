@@ -28,7 +28,7 @@ UninstPage instfiles
 ;----------------------------------------------------------------------
 Section "Install"
   SetOutPath "$INSTDIR"
-  File /r "dist\Speedometer\*"
+  File /r "..\dist\Speedometer\*"
 
   ; Registry entries for Add/Remove Programs
   WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" \
