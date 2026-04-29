@@ -9,7 +9,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 
-from speedcam.core import VideoSource
+from speedcam.core import VideoSource, is_live_camera
 from speedcam.overlay import draw_track, draw_hud, draw_tracks
 from speedcam.pipeline import build_detector, build_tracker
 from speedcam.speed import SpeedEstimator
@@ -87,9 +87,13 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
         fps = vs.fps or 30.0
         frame_interval = 1.0 / fps
 
-        # Reader thread decodes the next frame while inference runs on the current
-        # one. Queue size 4 = ~133ms of buffer at 30fps; drop on full to stay live.
+        # Reader thread decodes the next frame while inference runs on the current one.
+        # Queue size 4 = ~133ms of buffer at 30fps.
+        # Live cameras: drop on full to stay real-time (vs.read blocks at camera fps).
+        # Video files: block on full so the reader can't race through the file faster
+        # than inference consumes it — otherwise nearly all frames get dropped.
         frame_q: queue.Queue = queue.Queue(maxsize=4)
+        _live = is_live_camera(source)
 
         def _reader() -> None:
             try:
@@ -100,10 +104,13 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
                     ok, frame = vs.read()
                     if not ok:
                         break
-                    try:
-                        frame_q.put_nowait(frame)
-                    except queue.Full:
-                        pass
+                    if _live:
+                        try:
+                            frame_q.put_nowait(frame)
+                        except queue.Full:
+                            pass
+                    else:
+                        frame_q.put(frame)
             finally:
                 try:
                     frame_q.put(None, timeout=1)
