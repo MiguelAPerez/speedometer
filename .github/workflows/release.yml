@@ -178,6 +178,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
+            type=raw,value=${{ env.APP_VERSION }}
 
       - name: Build and push image
         uses: docker/build-push-action@v5
