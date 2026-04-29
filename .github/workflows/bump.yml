@@ -49,12 +49,3 @@ jobs:
 
       - name: Push commit and tag
         run: git push --follow-tags
-
-      - name: Get new tag
-        id: tag
-        run: echo "value=$(git describe --tags --abbrev=0)" >> $GITHUB_OUTPUT
-
-      - name: Trigger release workflow
-        run: gh workflow run release.yml --ref main --field tag=${{ steps.tag.outputs.value }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
