@@ -47,7 +47,7 @@ def test_is_live_camera_file(tmp_path):
 
 
 def test_is_live_camera_url():
-    assert is_live_camera("rtsp://cam/stream") is False
+    assert is_live_camera("rtsp://cam/stream") is True
 
 
 # ---------------------------------------------------------------------------
