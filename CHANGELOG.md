@@ -1,3 +1,19 @@
+## v1.2.0 (2026-04-29)
+
+### Feat
+
+- **perf**: add hardware acceleration and device optimization
+
+### Fix
+
+- **desktop**: PyInstaller 6.x path handling and native window integration
+- patching nvr link
+- **pipeline**: use blocking put for video files to prevent frame drop race
+
+### Refactor
+
+- **save+start**: move to 2 different buttons
+
 ## v1.1.0 (2026-04-28)
 
 ### Feat
