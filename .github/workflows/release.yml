@@ -98,7 +98,7 @@ jobs:
         with:
           tag_name: ${{ env.APP_VERSION }}
           generate_release_notes: true
-          files: "Speedometer-${{ env.APP_VERSION }}-windows-setup.exe"
+          files: "build/Speedometer-${{ env.APP_VERSION }}-windows-setup.exe"
 
   # ── Linux ──────────────────────────────────────────────────────────────────
   build-linux:
