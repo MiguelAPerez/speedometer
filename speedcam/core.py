@@ -285,7 +285,7 @@ class VideoSource:
             except Exception:
                 pass
         if not self._cap.isOpened():
-            raise RuntimeError(f"Could not open video source: {self._source!r}")
+            raise RuntimeError(f"Could not open video source: {sanitize_url(self._source)}")
 
     def _is_streaming(self) -> bool:
         src = str(self._source)
@@ -305,3 +305,19 @@ class VideoSource:
             return ok, frame if ok else None
         except RuntimeError:
             return False, None
+
+
+def sanitize_url(url: str | int) -> str:
+    """Mask credentials in RTSP/HTTP URLs for safe error reporting."""
+    if not isinstance(url, str) or "://" not in url:
+        return str(url)
+    try:
+        # Simple mask for rtsp://user:pass@host...
+        parts = url.split("@", 1)
+        if len(parts) > 1:
+            proto_auth = parts[0].split("://", 1)
+            if len(proto_auth) > 1:
+                return f"{proto_auth[0]}://****:****@{parts[1]}"
+    except Exception:
+        pass
+    return "[masked url]"

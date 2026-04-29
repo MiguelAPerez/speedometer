@@ -9,7 +9,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 
-from speedcam.core import VideoSource, is_live_camera
+from speedcam.core import VideoSource, is_live_camera, sanitize_url
 from speedcam.overlay import draw_track, draw_hud, draw_tracks
 from speedcam.pipeline import build_detector, build_tracker
 from speedcam.speed import SpeedEstimator
@@ -81,7 +81,7 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
         except Exception as e:
             with _lock:
                 _state["running"] = False
-                _state["error"] = str(e)
+                _state["error"] = f"Failed to open source: {sanitize_url(str(e))}"
             return
 
         fps = vs.fps or 30.0
@@ -236,7 +236,7 @@ def run_pipeline(source, calibration: dict, units: str) -> None:
     except Exception as e:
         with _lock:
             _state["running"] = False
-            _state["error"] = f"Pipeline error: {e}"
+            _state["error"] = f"Pipeline error: {sanitize_url(str(e))}"
 
 
 def mjpeg_stream():

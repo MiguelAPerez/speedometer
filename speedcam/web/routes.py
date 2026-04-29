@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, render_template, request
 
-from speedcam.core import VideoSource, load_calibration, save_calibration, clear_calibration, is_live_camera, get_data_dir
+from speedcam.core import VideoSource, load_calibration, save_calibration, clear_calibration, is_live_camera, get_data_dir, sanitize_url
 
 from .pipeline import run_pipeline, mjpeg_stream, preview_jpeg
 from .state import _lock, _state, reset_stats
@@ -89,9 +89,9 @@ def connect_source():
                 _state["tmp_video_path"] = source if not isinstance(source, int) else None
                 _state["calibration"] = None
             return jsonify({"ok": True, "w": frame.shape[1], "h": frame.shape[0]})
-        return jsonify({"ok": False, "error": "Could not grab frame from source"}), 500
+        return jsonify({"ok": False, "error": f"Could not grab frame from {sanitize_url(source)}"}), 500
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": f"Connection error: {sanitize_url(str(e))}"}), 500
 
 
 @bp.route("/api/grab_webcam_frame", methods=["POST"])
