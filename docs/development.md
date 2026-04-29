@@ -11,7 +11,7 @@ Everything you need to run Speedometer from source, understand the architecture,
 ```bash
 git clone https://github.com/MiguelAPerez/speedometer
 cd speedometer
-python -m venv .env
+python3 -m venv .env
 source .env/bin/activate      # Windows: .env\Scripts\activate
 pip install -r requirements.txt
 python app.py
