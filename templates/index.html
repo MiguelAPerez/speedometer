@@ -127,6 +127,8 @@
     <div class="radio-group">
       <label><input type="radio" name="src" value="webcam" checked> Webcam</label>
       <label><input type="radio" name="src" value="file"> Video file</label>
+      <label><input type="radio" name="src" value="rtsp"> Network stream (RTSP)</label>
+      <label><input type="radio" name="src" value="reolink"> Reolink Camera/NVR</label>
     </div>
   </div>
 
@@ -136,6 +138,30 @@
       Drop video or click
     </div>
     <div id="file-name" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+  </div>
+
+  <div id="rtsp-section" style="display:none">
+    <input type="text" id="rtsp-url" placeholder="rtsp://admin:pass@ip:554/..." class="input-full" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r);padding:6px 8px;font-size:12px;width:100%">
+  </div>
+
+  <div id="reolink-section" style="display:none; flex-direction:column; gap:6px;">
+    <input type="text" id="reo-ip" placeholder="IP Address" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r);padding:6px 8px;font-size:12px;width:100%">
+    <div style="display:flex; gap:4px">
+      <input type="text" id="reo-user" placeholder="User" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r);padding:6px 8px;font-size:12px;">
+      <input type="password" id="reo-pass" placeholder="Pass" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r);padding:6px 8px;font-size:12px;">
+    </div>
+    <div style="display:flex; gap:4px; align-items:center">
+      <span style="font-size:11px; color:var(--muted)">Ch:</span>
+      <input type="number" id="reo-ch" value="1" min="1" max="64" style="width:45px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:var(--r);padding:4px 6px;font-size:12px;">
+      <select id="reo-stream" style="flex:1; padding:4px 6px;">
+        <option value="main">Main (HD)</option>
+        <option value="sub">Sub (SD)</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="connect-section" style="display:block">
+    <button class="btn btn-neutral btn-sm" id="btn-connect-source">🔗 Connect & Grab Frame</button>
   </div>
 
   <div>
@@ -183,7 +209,8 @@
         <button class="btn btn-neutral btn-sm" id="btn-grab-webcam" style="width:auto">📷 Grab frame</button>
         <button class="btn btn-ghost  btn-sm" id="btn-undo-pt"     style="width:auto">↩ Undo</button>
         <button class="btn btn-ghost  btn-sm" id="btn-clear-cal"   style="width:auto">✕ Clear</button>
-        <button class="btn btn-primary btn-sm" id="btn-save-cal"   style="width:auto" disabled>💾 Save &amp; Start</button>
+        <button class="btn btn-neutral btn-sm" id="btn-save-cal"   style="width:auto" disabled>💾 Save</button>
+        <button class="btn btn-primary btn-sm" id="btn-start-cal"  style="width:auto" disabled>▶ Start</button>
         <span id="cal-status-text"></span>
       </div>
       <div id="video-wrap">
@@ -236,8 +263,62 @@
 document.querySelectorAll('input[name=src]').forEach(r => {
   r.addEventListener('change', () => {
     document.getElementById('file-section').style.display = r.value === 'file' ? 'block' : 'none';
+    document.getElementById('rtsp-section').style.display = r.value === 'rtsp' ? 'block' : 'none';
+    document.getElementById('reolink-section').style.display = r.value === 'reolink' ? 'flex' : 'none';
+    document.getElementById('connect-section').style.display = r.value === 'file' ? 'none' : 'block';
   });
 });
+
+async function connectSource() {
+  const mode = document.querySelector('input[name=src]:checked').value;
+  let source = 0;
+
+  if (mode === 'webcam') {
+    source = 0;
+  } else if (mode === 'rtsp') {
+    source = document.getElementById('rtsp-url').value.trim();
+    if (!source) { toast('Enter RTSP URL', true); return; }
+  } else if (mode === 'reolink') {
+    const ip = document.getElementById('reo-ip').value.trim();
+    const user = document.getElementById('reo-user').value.trim();
+    const pass = document.getElementById('reo-pass').value.trim();
+    const ch = parseInt(document.getElementById('reo-ch').value) || 1;
+    const stream = document.getElementById('reo-stream').value;
+    if (!ip || !user || !pass) { toast('Enter IP, User, and Pass', true); return; }
+    // Reolink RTSP URL pattern: rtsp://user:pass@ip:554//h264Preview_0<channel>_<stream>
+    // Note: channel is 1-indexed in UI, but 0-padded in URL usually (01, 02...)
+    const chStr = ch < 10 ? '0' + ch : ch;
+    source = `rtsp://${user}:${pass}@${ip}:554//h264Preview_${chStr}_${stream}`;
+  } else {
+    return; // File mode handled separately by upload
+  }
+
+  const btn = document.getElementById('btn-connect-source');
+  btn.disabled = true; btn.textContent = '⌛ Connecting...';
+  
+  try {
+    const r = await fetch('/api/connect_source', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      frameSize = { w: d.w, h: d.h };
+      refreshPreview();
+      tryLoadCal();
+      toast('Connected to ' + mode);
+    } else {
+      toast('Connection failed: ' + d.error, true);
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = '🔗 Connect & Grab Frame';
+  }
+}
+
+document.getElementById('btn-connect-source').addEventListener('click', connectSource);
 
 // ── File upload ───────────────────────────────────────────────────────────
 const fileDrop = document.getElementById('file-drop');
@@ -297,12 +378,7 @@ function resizeCanvas() {
 calImg.addEventListener('load', () => { if (!_isLive) resizeCanvas(); });
 window.addEventListener('resize', () => { resizeCanvas(); if (_map) _map.invalidateSize(); });
 
-document.getElementById('btn-grab-webcam').addEventListener('click', async () => {
-  const r = await fetch('/api/grab_webcam_frame', { method: 'POST' });
-  const d = await r.json();
-  if (d.ok) { frameSize = { w: d.w, h: d.h }; refreshPreview(); tryLoadCal(); }
-  else toast('Webcam error: ' + d.error, true);
-});
+document.getElementById('btn-grab-webcam').addEventListener('click', connectSource);
 
 calCanvas.addEventListener('click', e => {
   if (calCanvas.classList.contains('no-interact')) return;
@@ -428,9 +504,11 @@ document.getElementById('btn-save-cal').addEventListener('click', async () => {
   document.getElementById('cal-status-text').textContent =
     `✓ ${trackPts.length} pts · ${distances.map(v => v + 'm').join(', ')}`;
   document.getElementById('btn-start').disabled = false;
-  toast('Track saved — starting…');
-  await _startPipeline();
+  document.getElementById('btn-start-cal').disabled = false;
+  toast('Track saved');
 });
+
+document.getElementById('btn-start-cal').addEventListener('click', _startPipeline);
 
 async function tryLoadCal() {
   if (!frameSize.w) return;
@@ -451,6 +529,7 @@ async function tryLoadCal() {
   document.getElementById('cal-status-text').textContent =
     `Loaded · ${cal.distances.map(v => v + 'm').join(', ')}`;
   document.getElementById('btn-save-cal').disabled = false;
+  document.getElementById('btn-start-cal').disabled = false;
   document.getElementById('btn-start').disabled = false;
   toast('Saved track loaded');
 }

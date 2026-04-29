@@ -72,21 +72,32 @@ def upload():
     return jsonify({"ok": False, "error": "Could not read first frame"}), 500
 
 
-@bp.route("/api/grab_webcam_frame", methods=["POST"])
-def grab_webcam_frame():
+@bp.route("/api/connect_source", methods=["POST"])
+def connect_source():
+    data = request.json or {}
+    source = data.get("source", 0)
+    if isinstance(source, str) and source.isdigit():
+        source = int(source)
+
     try:
-        vs = VideoSource(0)
+        vs = VideoSource(source)
         frame = vs.grab_single_frame()
         vs.release()
         if frame is not None:
             with _lock:
                 _state["preview_frame"] = frame.copy()
-                _state["tmp_video_path"] = None
+                _state["tmp_video_path"] = source if not isinstance(source, int) else None
                 _state["calibration"] = None
             return jsonify({"ok": True, "w": frame.shape[1], "h": frame.shape[0]})
-        return jsonify({"ok": False, "error": "Empty frame"}), 500
+        return jsonify({"ok": False, "error": "Could not grab frame from source"}), 500
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/api/grab_webcam_frame", methods=["POST"])
+def grab_webcam_frame():
+    # Keep for compatibility, but internally uses connect_source logic
+    return connect_source()
 
 
 @bp.route("/api/calibrate", methods=["POST"])

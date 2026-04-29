@@ -81,11 +81,16 @@ def source_key(source: str | int) -> str:
 
 
 def is_live_camera(source: str | int) -> bool:
-    """Return True only for webcam/device-index sources (not files or URLs)."""
+    """Return True for webcam/device-index sources or network streams (not files)."""
     if isinstance(source, int):
         return True
     src = str(source)
-    return src.isdigit()
+    if src.isdigit():
+        return True
+    # Network streams are live sources
+    if any(src.startswith(p) for p in ["rtsp://", "http://", "https://"]):
+        return True
+    return False
 
 
 def clear_calibration(source: str | int) -> None:
