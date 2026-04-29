@@ -309,7 +309,7 @@ calCanvas.addEventListener('click', e => {
   const rect = calCanvas.getBoundingClientRect();
   const sx = calCanvas.width / rect.width, sy = calCanvas.height / rect.height;
   trackPts.push({ x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy });
-  redrawCal(); rebuildSegInputs(); updateCalState();
+  rebuildSegInputs(); updateCalState(); resizeCanvas();
 });
 
 function redrawCal() {
