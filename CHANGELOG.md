@@ -1,3 +1,9 @@
+## v1.2.1 (2026-04-29)
+
+### Fix
+
+- **ci**: update libwebkit2gtk to 4.1-dev for Ubuntu 24.04 compatibility
+
 ## v1.2.0 (2026-04-29)
 
 ### Feat
